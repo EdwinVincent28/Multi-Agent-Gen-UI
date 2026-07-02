@@ -1,0 +1,78 @@
+# =========================
+# 1. Environment Variables
+# =========================
+# NEVER commit API keys or database credentials
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+
+# =========================
+# 2. Backend (Python / FastAPI)
+# =========================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+venv/
+env/
+.venv/
+.env/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# =========================
+# 3. Frontend (Node / React / Vite)
+# =========================
+# Dependencies
+frontend/node_modules/
+node_modules/
+
+# Build outputs
+frontend/dist/
+frontend/build/
+dist/
+build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Framework / Tooling specific
+.eslintcache
+.stylelintcache
+
+# =========================
+# 4. OS & Editor Specific
+# =========================
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDEs (VS Code, IntelliJ, etc.)
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# 5. GCP / Deployment / Misc
+# =========================
+.gcloud/
+*.log
