@@ -1,7 +1,15 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="Generative UI Data Science Engine")
+from app.core.database import engine, Base
+from app.routers import auth 
+
+from app.models.schemas import GenerationRequest, GenerationResponse
+from app.swarm.graph import swarm_graph
+
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI(title="Autonomous Data Science Engine API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -10,6 +18,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth.router)
 
 @app.get("/")
 def read_root():
