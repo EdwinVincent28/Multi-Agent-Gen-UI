@@ -6,6 +6,7 @@ def data_engineer_node(state: GraphState):
     """
     Ingests raw data, sanitizes it, and outputs a structured JSON format.
     """
+    print("--- DATA ENGINEER RUNNING ---")
 
     llm = get_llm(temperature=0.0) 
 

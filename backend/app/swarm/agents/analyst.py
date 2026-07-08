@@ -7,6 +7,7 @@ def analyst_node(state: GraphState):
     Takes clean JSON data from the state, performs statistical analysis, 
     and generates key business insights.
     """
+    print("--- ANALYST RUNNING ---")
 
     llm = get_llm(temperature=0.2) 
 
