@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input"
 import { Activity, LogOut } from "lucide-react"
 
+import SandboxRenderer from "@/components/SandboxRenderer"
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const [file, setFile] = useState<File | null>(null)
@@ -72,16 +74,10 @@ export default function Dashboard() {
         </Card>
 
         {generatedCode && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Raw AI Output</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <pre className="bg-slate-900 text-slate-50 p-4 rounded-md overflow-x-auto text-sm">
-                {generatedCode}
-              </pre>
-            </CardContent>
-          </Card>
+          <div className="mt-8 space-y-4">
+            <h2 className="text-xl font-bold text-slate-900">Generated Dashboard</h2>
+            <SandboxRenderer codeString={generatedCode} />
+          </div>
         )}
       </div>
     </div>
