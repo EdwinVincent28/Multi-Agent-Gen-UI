@@ -14,6 +14,7 @@ load_dotenv()
 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 redis_client = Redis.from_url(redis_url)
 memory_saver = RedisSaver(redis_client=redis_client)
+memory_saver.setup()
 
 def build_graph():
     workflow = StateGraph(GraphState)
