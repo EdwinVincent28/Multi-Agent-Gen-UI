@@ -1,7 +1,7 @@
 import os
-from redis import Redis
+from redis.asyncio import Redis as AsyncRedis
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.redis import RedisSaver
+from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from dotenv import load_dotenv
 
 from app.swarm.state import GraphState
@@ -12,9 +12,8 @@ from app.swarm.agents.frontend_engineer import frontend_engineer_node
 load_dotenv()
 
 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-redis_client = Redis.from_url(redis_url)
-memory_saver = RedisSaver(redis_client=redis_client)
-memory_saver.setup()
+redis_client = AsyncRedis.from_url(redis_url)
+memory_saver = AsyncRedisSaver(redis_client=redis_client)
 
 def build_graph():
     def entry_router(state: GraphState):

@@ -3,12 +3,9 @@ from fastapi import UploadFile
 from app.swarm.graph import swarm_graph
 from app.models.user import User
 
-def execute_generation_swarm(session_id: str, file: UploadFile, current_user: User) -> dict:
-    """
-    Business logic for processing the file and invoking the AI swarm.
-    """
+async def execute_generation_swarm(session_id: str, file: UploadFile, current_user: User) -> dict:
     try:
-        file_bytes = file.file.read()
+        file_bytes = await file.read()
         raw_text = file_bytes.decode("utf-8")
 
         initial_state = {
@@ -22,7 +19,7 @@ def execute_generation_swarm(session_id: str, file: UploadFile, current_user: Us
         thread_id = build_thread_id(current_user.id, session_id)
         config = {"configurable": {"thread_id": thread_id}}
 
-        final_state = swarm_graph.invoke(initial_state, config=config)
+        final_state = await swarm_graph.ainvoke(initial_state, config=config)
 
         if final_state.get("errors"):
             raise ValueError(final_state["errors"])
@@ -32,17 +29,27 @@ def execute_generation_swarm(session_id: str, file: UploadFile, current_user: Us
     except Exception as e:
         raise Exception(f"Swarm execution failed: {str(e)}")
     finally:
-        file.file.close()
+        await file.close()
 
-def execute_chat_swarm(session_id: str, prompt: str, current_user: User) -> dict:
-    """
-    Resumes a LangGraph session from Redis and passes the user's prompt 
-    to trigger the Frontend Engineer's Edit Mode.
-    """
+async def execute_chat_swarm(session_id: str, prompt: str, current_user: User) -> dict:
     print(f"--- TRIGGERING CHAT FOR SESSION: {session_id} ---")
 
     thread_id = build_thread_id(current_user.id, session_id)
     config = {"configurable": {"thread_id": thread_id}}
-    final_state = swarm_graph.invoke({"user_prompt": prompt}, config)
+    
+    final_state = await swarm_graph.ainvoke({"user_prompt": prompt}, config=config)
 
     return final_state
+
+async def stream_chat_swarm(session_id: str, prompt: str, current_user: User):
+    print(f"--- STREAMING CHAT FOR SESSION: {session_id} ---")
+
+    thread_id = build_thread_id(current_user.id, session_id)
+    config = {"configurable": {"thread_id": thread_id}}
+    
+    async for event in swarm_graph.astream_events({"user_prompt": prompt}, config=config, version="v2"):
+        kind = event["event"]
+        if kind == "on_chat_model_stream":
+            chunk = event["data"]["chunk"].content
+            if chunk:
+                yield chunk
