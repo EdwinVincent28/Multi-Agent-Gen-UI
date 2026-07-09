@@ -57,40 +57,48 @@ export default function Dashboard() {
     }
   }
 
-  const handleChat = async (e: React.FormEvent) => {
+  const handleChat = (e: React.FormEvent) => {
     e.preventDefault()
     const token = localStorage.getItem("jwt_token")
     if (!chatInput.trim() || !token) return
     
     setIsChatting(true)
-    const payload = {
-      session_id: sessionId,
-      prompt: chatInput
+    
+    setGeneratedCode("")
+    
+    const ws = new WebSocket(`ws://127.0.0.1:8000/api/v1/ws/chat/${sessionId}`)
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({
+        token: token,
+        prompt: chatInput
+      }))
+      setChatInput("") 
     }
 
-    try {
-      const res = await fetch("http://127.0.0.1:8000/api/v1/chat", {
-        method: "POST",
-        headers: { 
-          "Authorization": `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-      })
+    ws.onmessage = (event) => {
+      const chunk = event.data
+
+      if (chunk === "<END_OF_STREAM>") {
+        ws.close()
+        return
+      }
       
-      if (res.status === 401) {
-        handleLogout()
+      if (chunk.startsWith("Error:") || chunk.startsWith("Fatal Error:")) {
+        console.error("Backend streaming error:", chunk)
+        ws.close()
         return
       }
 
-      const data = await res.json()
-      if (data.ui_code) {
-        setGeneratedCode(data.ui_code)
-      }
-      setChatInput("") 
-    } catch (error) {
-      console.error("Chat failed:", error)
-    } finally {
+      setGeneratedCode((prev) => (prev || "") + chunk)
+    }
+
+    ws.onerror = (error) => {
+      console.error("WebSocket Error:", error)
+      setIsChatting(false)
+    }
+
+    ws.onclose = () => {
       setIsChatting(false)
     }
   }
@@ -120,10 +128,14 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {generatedCode && (
+        {(generatedCode !== null || isChatting) && (
           <div className="mt-8 space-y-4">
             <h2 className="text-xl font-bold text-slate-900">Generated Dashboard</h2>
-            <SandboxRenderer codeString={generatedCode} data={dataset} />
+            <SandboxRenderer 
+              codeString={generatedCode || ""} 
+              data={dataset} 
+              isStreaming={isChatting || isLoading} 
+            />
     
             <Card className="mt-4 border-blue-200 bg-blue-50/50">
               <CardHeader className="pb-3">
