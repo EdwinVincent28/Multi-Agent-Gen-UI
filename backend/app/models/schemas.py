@@ -22,3 +22,8 @@ class TokenResponse(BaseModel):
     """The JWT payload sent back to the client."""
     access_token: str
     token_type: str = "bearer"
+
+class ChatRequest(BaseModel):
+    """Payload for the iterative chat feature."""
+    session_id: str
+    prompt: str

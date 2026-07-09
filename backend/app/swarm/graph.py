@@ -17,13 +17,24 @@ memory_saver = RedisSaver(redis_client=redis_client)
 memory_saver.setup()
 
 def build_graph():
+    def entry_router(state: GraphState):
+        if state.get("user_prompt"):
+            return "frontend_engineer"
+        return "data_engineer"
+
     workflow = StateGraph(GraphState)
 
     workflow.add_node("data_engineer", data_engineer_node)
     workflow.add_node("analyst", analyst_node)
     workflow.add_node("frontend_engineer", frontend_engineer_node)
 
-    workflow.set_entry_point("data_engineer")
+    workflow.set_conditional_entry_point(
+        entry_router,
+        {
+            "frontend_engineer": "frontend_engineer",
+            "data_engineer": "data_engineer"
+        }
+    )
 
     def route_after_data_cleaning(state: GraphState):
         if state.get("errors"):

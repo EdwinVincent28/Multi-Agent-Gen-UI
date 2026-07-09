@@ -6,6 +6,10 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import * as LucideIcons from "lucide-react"
+import {
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+} from "recharts"
 
 const scope = {
   React,
@@ -24,7 +28,9 @@ const scope = {
   TableCell,
   TableHead,
   TableHeader,
-  TableRow,
+  TableRow,   
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 }
 
 export default function SandboxRenderer({ codeString, data }: { codeString: string, data: any[] | null }) {
