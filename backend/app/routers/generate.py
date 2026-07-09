@@ -3,6 +3,7 @@ from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.schemas import GenerationResponse
 from app.services.swarm_service import execute_generation_swarm
+import json
 
 router = APIRouter(prefix="/api/v1", tags=["Generation"])
 
@@ -19,9 +20,15 @@ def generate_dashboard(
     try:
         final_state = execute_generation_swarm(session_id, file, current_user)
 
+        if final_state.get("errors"):
+            raise ValueError(final_state["errors"])
+
+        parsed_data = final_state.get("clean_data")
+
         return GenerationResponse(
             insights=final_state.get("insights"),
             ui_code=final_state.get("ui_code"),
+            data=parsed_data,
             errors=None
         )
 

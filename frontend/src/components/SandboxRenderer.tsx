@@ -27,11 +27,13 @@ const scope = {
   TableRow,
 }
 
-export default function SandboxRenderer({ codeString }: { codeString: string }) {
+export default function SandboxRenderer({ codeString, data }: { codeString: string, data: any[] | null }) {
   const cleanCode = useMemo(() => {
     if (!codeString) return ""
 
     let processed = codeString
+      .replace(/```[a-zA-Z]*\n?/g, "")
+      .replace(/```/g, "")
       .split('\n')
       .filter(line => !line.trim().startsWith('import'))
       .join('\n')
@@ -43,9 +45,14 @@ export default function SandboxRenderer({ codeString }: { codeString: string }) 
     return processed
   }, [codeString])
 
+  const dynamicScope = {
+    ...scope,  
+    data   
+  }
+
   return (
     <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
-      <LiveProvider code={cleanCode} scope={scope} noInline={true}>
+      <LiveProvider code={cleanCode} scope={dynamicScope} noInline={true}>
         <div className="p-6">
           <LivePreview />
         </div>

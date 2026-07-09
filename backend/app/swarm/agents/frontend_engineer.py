@@ -40,7 +40,7 @@ GENERAL RULES:
    - import {{ Badge }} from "@/components/ui/badge"
    - import {{ Button }} from "@/components/ui/button"
    - import {{ Table, TableBody, TableCell, TableHead, TableHeader, TableRow }} from "@/components/ui/table"
-4. The component must be fully self-contained. Embed the provided clean data directly inside the component block.
+4. CRITICAL: A global variable named 'data' containing the JSON array is already injected into your environment. You MUST use this global 'data' variable directly. DO NOT declare a local state variable named 'data' (e.g., never write const [data, setData] = useState(data)).
 """),
         ("user", "Clean Data:\n{clean_data}\n\nAnalytical Insights:\n{insights}")
     ])

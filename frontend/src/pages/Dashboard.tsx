@@ -12,6 +12,7 @@ export default function Dashboard() {
   const [file, setFile] = useState<File | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [generatedCode, setGeneratedCode] = useState<string | null>(null)
+  const [dataset, setDataset] = useState<any[] | null>(null)
 
   const handleLogout = () => {
     localStorage.removeItem("jwt_token")
@@ -40,7 +41,10 @@ export default function Dashboard() {
       }
 
       const data = await res.json()
-      if (data.ui_code) setGeneratedCode(data.ui_code)
+      if (data.ui_code) {
+        setGeneratedCode(data.ui_code)
+        setDataset(data.data) 
+      }
     } catch (error) {
       console.error("Generation failed:", error)
     } finally {
@@ -76,7 +80,7 @@ export default function Dashboard() {
         {generatedCode && (
           <div className="mt-8 space-y-4">
             <h2 className="text-xl font-bold text-slate-900">Generated Dashboard</h2>
-            <SandboxRenderer codeString={generatedCode} />
+            <SandboxRenderer codeString={generatedCode} data={dataset} />
           </div>
         )}
       </div>

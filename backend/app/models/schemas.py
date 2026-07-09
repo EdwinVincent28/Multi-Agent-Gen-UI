@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from typing import Any
 
 class GenerationRequest(BaseModel):
     """Validates the JSON payload sent from the Vite frontend or Postman."""
@@ -9,6 +10,7 @@ class GenerationResponse(BaseModel):
     """Structures the final output returned to the client."""
     insights: str | None
     ui_code: str | None
+    data: Any = None
     errors: str | None
 
 class UserCreate(BaseModel):
