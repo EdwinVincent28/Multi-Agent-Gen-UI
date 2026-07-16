@@ -3,7 +3,10 @@ from langchain_core.prompts import ChatPromptTemplate
 from app.core.llm import get_llm
 from app.swarm.state import GraphState
 
-def frontend_engineer_node(state: GraphState):
+from langchain_core.runnables.config import RunnableConfig
+from app.services.memory_service import save_dashboard_to_memory
+
+def frontend_engineer_node(state: GraphState, config: RunnableConfig):
     """
     Ingests clean data and analytical insights, then synthesizes a secure,
     self-contained React component utilizing shadcn/ui and Tailwind CSS.
@@ -97,5 +100,16 @@ Preserve all existing data-field references (e.g. item.Region, item.Revenue) exa
         ui_code = code_blocks[-1].strip()
     else:
         ui_code = raw_content.strip()
+
+    thread_id = config.get("configurable", {}).get("thread_id")
+    
+    session_id = thread_id.split("_")[-1] if thread_id else None
+    
+    if session_id and ui_code:
+        save_dashboard_to_memory(
+            session_id=session_id,
+            insights=str(state.get("insights", "")),
+            ui_code=ui_code
+        )
 
     return {"ui_code": ui_code}
