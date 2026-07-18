@@ -76,3 +76,4 @@ $RECYCLE.BIN/
 # =========================
 .gcloud/
 *.log
+backend/gcp-key.json

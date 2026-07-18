@@ -10,3 +10,4 @@ class GraphState(TypedDict):
     ui_code: Optional[str]
     user_prompt: Optional[str]
     errors: Optional[str]
+    deployment_url: Optional[str]

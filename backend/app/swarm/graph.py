@@ -8,6 +8,7 @@ from app.swarm.state import GraphState
 from app.swarm.agents.data_engineer import data_engineer_node
 from app.swarm.agents.analyst import analyst_node
 from app.swarm.agents.frontend_engineer import frontend_engineer_node
+from app.swarm.agents.devops_agent import devops_agent_node
 
 from app.services.memory_service import retrieve_similar_dashboard
 
@@ -43,6 +44,7 @@ def build_graph():
     workflow.add_node("analyst", analyst_node)
     workflow.add_node("semantic_memory", semantic_memory_node)
     workflow.add_node("frontend_engineer", frontend_engineer_node)
+    workflow.add_node("devops_agent", devops_agent_node)
 
     workflow.set_conditional_entry_point(
         entry_router,
@@ -65,7 +67,8 @@ def build_graph():
 
     workflow.add_edge("analyst", "semantic_memory")
     workflow.add_edge("semantic_memory", "frontend_engineer")
-    workflow.add_edge("frontend_engineer", END)
+    workflow.add_edge("frontend_engineer", "devops_agent") 
+    workflow.add_edge("devops_agent", END)
 
     return workflow.compile(checkpointer=memory_saver)
 
