@@ -67,8 +67,7 @@ def build_graph():
 
     workflow.add_edge("analyst", "semantic_memory")
     workflow.add_edge("semantic_memory", "frontend_engineer")
-    workflow.add_edge("frontend_engineer", "devops_agent") 
-    workflow.add_edge("devops_agent", END)
+    workflow.add_edge("frontend_engineer", END)
 
     return workflow.compile(checkpointer=memory_saver)
 

@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.database import engine, Base
-from app.routers import auth, generate 
+from app.routers import auth, generate, deploy
 
 from app.models.schemas import GenerationRequest, GenerationResponse
 from app.swarm.graph import swarm_graph
@@ -21,6 +21,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(generate.router)
+app.include_router(deploy.router, prefix="/api/v1/deploy", tags=["Deployment"])
 
 @app.get("/")
 def read_root():

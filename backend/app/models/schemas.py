@@ -27,3 +27,6 @@ class ChatRequest(BaseModel):
     """Payload for the iterative chat feature."""
     session_id: str
     prompt: str
+
+class DeployRequest(BaseModel):
+    ui_code: str
