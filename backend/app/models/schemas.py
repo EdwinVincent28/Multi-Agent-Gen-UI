@@ -30,3 +30,4 @@ class ChatRequest(BaseModel):
 
 class DeployRequest(BaseModel):
     ui_code: str
+    clean_data: Any

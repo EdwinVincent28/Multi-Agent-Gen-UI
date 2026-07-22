@@ -107,7 +107,7 @@ export default function Dashboard() {
     }
   }
 
-  const handleDeployToCloud = async () => {
+const handleDeployToCloud = async () => {
     const token = localStorage.getItem("jwt_token")
     if (!generatedCode || !token) return
     
@@ -121,7 +121,10 @@ export default function Dashboard() {
           "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ ui_code: generatedCode })
+        body: JSON.stringify({ 
+          ui_code: generatedCode,
+          clean_data: dataset || []
+        })
       })
       
       const data = await res.json()
