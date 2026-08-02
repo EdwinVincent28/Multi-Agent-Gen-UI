@@ -107,7 +107,7 @@ export default function Dashboard() {
     }
   }
 
-const handleDeployToCloud = async () => {
+  const handleDeployToCloud = async () => {
     const token = localStorage.getItem("jwt_token")
     if (!generatedCode || !token) return
     
@@ -128,12 +128,34 @@ const handleDeployToCloud = async () => {
       })
       
       const data = await res.json()
-      if (data.deployment_url) {
-        setDeploymentUrl(data.deployment_url)
+      
+      if (data.job_id) {
+        const pollInterval = setInterval(async () => {
+          try {
+            const statusRes = await fetch(`http://127.0.0.1:8000/api/v1/deploy/status/${data.job_id}`);
+            
+            if (statusRes.ok) {
+              const statusData = await statusRes.json();
+
+              if (statusData.status === "completed") {
+                setDeploymentUrl(statusData.url);
+                setIsDeploying(false);
+                clearInterval(pollInterval);
+              } else if (statusData.status === "failed") {
+                console.error("Deployment failed:", statusData.error);
+                setIsDeploying(false);
+                clearInterval(pollInterval);
+              }
+            }
+          } catch (pollError) {
+            console.error("Polling error:", pollError);
+            setIsDeploying(false);
+            clearInterval(pollInterval);
+          }
+        }, 3000);
       }
     } catch (error) {
-      console.error("Cloud deployment failed:", error)
-    } finally {
+      console.error("Cloud deployment request failed:", error)
       setIsDeploying(false)
     }
   }
