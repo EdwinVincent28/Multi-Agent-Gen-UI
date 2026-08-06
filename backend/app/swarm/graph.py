@@ -1,4 +1,5 @@
 import os
+import time
 from redis.asyncio import Redis as AsyncRedis
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
@@ -9,6 +10,7 @@ from app.swarm.agents.data_engineer import data_engineer_node
 from app.swarm.agents.analyst import analyst_node
 from app.swarm.agents.frontend_engineer import frontend_engineer_node
 from app.swarm.agents.devops_agent import devops_agent_node
+from app.swarm.agents.evaluator import evaluator_node 
 
 from app.services.memory_service import retrieve_similar_dashboard
 
@@ -17,6 +19,8 @@ load_dotenv()
 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 redis_client = AsyncRedis.from_url(redis_url)
 memory_saver = AsyncRedisSaver(redis_client=redis_client)
+
+ENABLE_EVAL_GATE = True 
 
 def semantic_memory_node(state: GraphState):
     """Queries Qdrant for past dashboards to inject as structural context."""
@@ -34,6 +38,16 @@ def semantic_memory_node(state: GraphState):
 
 def build_graph():
     def entry_router(state: GraphState):
+        if "telemetry" not in state or not state["telemetry"]:
+            state["telemetry"] = {
+                "start_time": time.time(),
+                "baseline_latency": 0.0,
+                "total_latency": 0.0,
+                "baseline_tokens": 0,
+                "total_tokens": 0,
+                "task_success": False
+            }
+            
         if state.get("user_prompt"):
             return "semantic_memory"
         return "data_engineer"
@@ -45,6 +59,7 @@ def build_graph():
     workflow.add_node("semantic_memory", semantic_memory_node)
     workflow.add_node("frontend_engineer", frontend_engineer_node)
     workflow.add_node("devops_agent", devops_agent_node)
+    workflow.add_node("evaluator", evaluator_node)
 
     workflow.set_conditional_entry_point(
         entry_router,
@@ -67,7 +82,34 @@ def build_graph():
 
     workflow.add_edge("analyst", "semantic_memory")
     workflow.add_edge("semantic_memory", "frontend_engineer")
-    workflow.add_edge("frontend_engineer", END)
+    
+    def route_after_frontend(state: GraphState):
+        if not ENABLE_EVAL_GATE:
+            return "end"
+        return "evaluator"
+
+    workflow.add_conditional_edges(
+        "frontend_engineer",
+        route_after_frontend,
+        {
+            "evaluator": "evaluator",
+            "end": END
+        }
+    )
+    
+    def route_after_evaluation(state: GraphState):
+        if state.get("retry_count", 0) >= 3 or not state.get("eval_feedback"):
+            return "end"
+        return "frontend_engineer"
+
+    workflow.add_conditional_edges(
+        "evaluator",
+        route_after_evaluation,
+        {
+            "frontend_engineer": "frontend_engineer",
+            "end": END
+        }
+    )
 
     return workflow.compile(checkpointer=memory_saver)
 

@@ -1,3 +1,4 @@
+import json
 from app.core.threading import build_thread_id
 from fastapi import UploadFile
 from app.swarm.graph import swarm_graph
@@ -21,6 +22,12 @@ async def execute_generation_swarm(session_id: str, file: UploadFile, current_us
 
         final_state = await swarm_graph.ainvoke(initial_state, config=config)
 
+        print("\n=== END-TO-END TELEMETRY (GENERATION) ===")
+        print(json.dumps(final_state.get("telemetry", {}), indent=2))
+        if final_state.get("retry_count"):
+            print(f"Retries triggered: {final_state['retry_count']}")
+        print("==========================================\n")
+
         if final_state.get("errors"):
             raise ValueError(final_state["errors"])
 
@@ -39,6 +46,12 @@ async def execute_chat_swarm(session_id: str, prompt: str, current_user: User) -
     
     final_state = await swarm_graph.ainvoke({"user_prompt": prompt}, config=config)
 
+    print("\n=== END-TO-END TELEMETRY (CHAT) ===")
+    print(json.dumps(final_state.get("telemetry", {}), indent=2))
+    if final_state.get("retry_count"):
+        print(f"Retries triggered: {final_state['retry_count']}")
+    print("==========================================\n")
+
     return final_state
 
 async def stream_chat_swarm(session_id: str, prompt: str, current_user: User):
@@ -47,9 +60,25 @@ async def stream_chat_swarm(session_id: str, prompt: str, current_user: User):
     thread_id = build_thread_id(current_user.id, session_id)
     config = {"configurable": {"thread_id": thread_id}}
     
+    final_state = None
+    
     async for event in swarm_graph.astream_events({"user_prompt": prompt}, config=config, version="v2"):
         kind = event["event"]
-        if kind == "on_chat_model_stream":
+        node_name = event.get("metadata", {}).get("langgraph_node")
+        
+        if kind == "on_chat_model_stream" and node_name == "frontend_engineer":
             chunk = event["data"]["chunk"].content
             if chunk:
                 yield chunk
+
+        if kind == "on_chain_end" and not node_name:
+            output = event.get("data", {}).get("output")
+            if isinstance(output, dict) and "telemetry" in output:
+                final_state = output
+
+    if final_state:
+        print("\n=== END-TO-END TELEMETRY (STREAM CHAT) ===")
+        print(json.dumps(final_state.get("telemetry", {}), indent=2))
+        if final_state.get("retry_count"):
+            print(f"Retries triggered: {final_state['retry_count']}")
+        print("==========================================\n")

@@ -1,22 +1,27 @@
 import re
+import time
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables.config import RunnableConfig
 from app.core.llm import get_llm
 from app.swarm.state import GraphState
-
-from langchain_core.runnables.config import RunnableConfig
 from app.services.memory_service import save_dashboard_to_memory
 
 def frontend_engineer_node(state: GraphState, config: RunnableConfig):
     """
     Ingests clean data and analytical insights, then synthesizes a secure,
     self-contained React component utilizing shadcn/ui and Tailwind CSS.
+    Appends execution telemetry and handles feedback from the Evaluator node.
     """
     print("--- FRONTEND ENGINEER RUNNING ---")
+    start_time = time.time()
 
     llm = get_llm(temperature=0.2)
 
     clean_data = state.get("clean_data", [])
     columns = list(clean_data[0].keys()) if clean_data else []
+    eval_feedback = state.get("eval_feedback", [])
+
+    feedback_str = "\n".join([f"- {item}" for item in eval_feedback]) if eval_feedback else "None."
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an expert Frontend Architect specialized in React, TypeScript, Tailwind CSS, and shadcn/ui.
@@ -49,27 +54,21 @@ CRITICAL CHARTING RULES (DO NOT HALLUCINATE LIBRARIES):
 1. The ONLY charting library available is "recharts". These components are pre-injected into your environment: BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer.
 2. NEVER import or use "chart.js", "react-chartjs-2", or any other charting library — they are NOT available and will crash with "X is not defined".
 3. NEVER use <canvas>, <script> tags, or manual DOM chart initialization (e.g. document.getElementById, new Chart(...)) — this is a React-only sandbox.
-4. Example correct bar chart usage:
-   <ResponsiveContainer width="100%" height={{300}}>
-     <BarChart data={{chartData}}>
-       <CartesianGrid strokeDasharray="3 3" />
-       <XAxis dataKey="name" />
-       <YAxis />
-       <Tooltip />
-       <Bar dataKey="value" fill="#8884d8" />
-     </BarChart>
-   </ResponsiveContainer>
 
 GENERAL RULES:
-1. Return ONLY executable React component code. Do NOT wrap it in markdown code blocks (no ```jsx or ```tsx). Do NOT include explanations.
-2. Use modern, functional React components using standard hooks (useState, useMemo) if interactivity is needed.
-3. Assume standard components are available via path aliases. 
+1. Return ONLY executable React component code. 
+2. CRITICAL STREAMING RULE: You must START YOUR RESPONSE DIRECTLY WITH `import React`. Do NOT output any conversational text, greetings, apologies, or explanations before or after the code. Do NOT wrap it in markdown code blocks (no ```jsx or ```tsx).
+3. Use modern, functional React components using standard hooks (useState, useMemo) if interactivity is needed.
+4. Assume standard components are available via path aliases. 
    Example imports you should use:
    - import {{ Card, CardContent, CardHeader, CardTitle, CardDescription }} from "@/components/ui/card"
    - import {{ Badge }} from "@/components/ui/badge"
    - import {{ Button }} from "@/components/ui/button"
    - import {{ Table, TableBody, TableCell, TableHead, TableHeader, TableRow }} from "@/components/ui/table"
-4. CRITICAL: A global variable named 'data' containing the JSON array is already injected into your environment. You MUST use this global 'data' variable directly. DO NOT declare a local state variable named 'data' (e.g., never write const [data, setData] = useState(data)).
+5. CRITICAL: A global variable named 'data' containing the JSON array is already injected into your environment. You MUST use this global 'data' variable directly. DO NOT declare a local state variable named 'data' (e.g., never write const [data, setData] = useState(data)).
+
+CRITICAL QUALITY EVALUATION FEEDBACK (CORRECT THESE ERRORS):
+{feedback_str}
 
 EDIT MODE RULES:
 If a USER PROMPT and PREVIOUS CODE are provided, you are in EDIT MODE.
@@ -86,8 +85,17 @@ Preserve all existing data-field references (e.g. item.Region, item.Revenue) exa
         "clean_data": clean_data,
         "insights": state.get("insights", ""),
         "previous_code": state.get("ui_code", "None provided."),
-        "user_prompt": state.get("user_prompt", "None provided.")
+        "user_prompt": state.get("user_prompt", "None provided."),
+        "feedback_str": feedback_str
     })
+
+    elapsed_time = time.time() - start_time
+    
+    tokens_used = 0
+    if hasattr(response, "usage_metadata") and response.usage_metadata:
+        tokens_used = response.usage_metadata.get("total_tokens", 0)
+    elif hasattr(response, "response_metadata") and "token_usage" in response.response_metadata:
+        tokens_used = response.response_metadata["token_usage"].get("total_tokens", 0)
 
     raw_content = response.content
 
@@ -102,7 +110,6 @@ Preserve all existing data-field references (e.g. item.Region, item.Revenue) exa
         ui_code = raw_content.strip()
 
     thread_id = config.get("configurable", {}).get("thread_id")
-    
     session_id = thread_id.split("_")[-1] if thread_id else None
     
     if session_id and ui_code:
@@ -112,4 +119,17 @@ Preserve all existing data-field references (e.g. item.Region, item.Revenue) exa
             ui_code=ui_code
         )
 
-    return {"ui_code": ui_code}
+    telemetry = dict(state.get("telemetry", {}))
+    is_first_pass = (state.get("retry_count", 0) == 0 and "baseline_latency" not in telemetry)
+
+    if is_first_pass:
+        telemetry["baseline_latency"] = round(telemetry.get("total_latency", 0.0) + elapsed_time, 2)
+        telemetry["baseline_tokens"] = telemetry.get("total_tokens", 0) + tokens_used
+
+    telemetry["total_latency"] = round(telemetry.get("total_latency", 0.0) + elapsed_time, 2)
+    telemetry["total_tokens"] = telemetry.get("total_tokens", 0) + tokens_used
+
+    return {
+        "ui_code": ui_code,
+        "telemetry": telemetry
+    }

@@ -11,3 +11,6 @@ class GraphState(TypedDict):
     user_prompt: Optional[str]
     errors: Optional[str]
     deployment_url: Optional[str]
+    eval_feedback: Optional[list[str]]
+    retry_count: Optional[int]
+    telemetry: Optional[dict[str, Any]]
