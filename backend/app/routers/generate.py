@@ -8,6 +8,7 @@ from app.core.security import SECRET_KEY, ALGORITHM
 import jwt
 from sqlalchemy.orm import Session
 from app.core.database import get_db
+from loguru import logger
 
 router = APIRouter(prefix="/api/v1", tags=["Generation"])
 
@@ -68,7 +69,7 @@ async def chat_with_dashboard(
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        print(f"Chat Endpoint Error: {e}")
+        logger.error(f"Chat Endpoint Error: {e}")
         raise HTTPException(status_code=500, detail="An error occurred while updating the dashboard.")
     
 @router.websocket("/ws/chat/{session_id}")
@@ -118,14 +119,11 @@ async def websocket_chat_endpoint(
         await websocket.send_text("<END_OF_STREAM>")
         
     except WebSocketDisconnect:
-        print(f"WebSocket disconnected gracefully for session {session_id}")
+        logger.info(f"WebSocket disconnected gracefully for session {session_id}")
     except Exception as e:
         import traceback
-        print("\n--- FULL WEBSOCKET TRACEBACK ---")
+        logger.error("\n--- FULL WEBSOCKET TRACEBACK ---")
         traceback.print_exc()
-        print("--------------------------------\n")
-        
-        # Using repr(e) instead of str(e) forces Python to print the exact Error Class name 
-        # even if it doesn't have a string message attached to it.
+        logger.error(f"WebSocket Error: {e}")
         await websocket.send_text(f"Fatal Error: {repr(e)}")
         await websocket.close(code=1011)

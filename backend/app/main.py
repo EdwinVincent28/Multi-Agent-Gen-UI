@@ -7,9 +7,13 @@ from app.routers import auth, generate, deploy
 from app.models.schemas import GenerationRequest, GenerationResponse
 from app.swarm.graph import swarm_graph
 
+from loguru import logger
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Autonomous Data Science Engine API")
+
+logger.add("logs/telemetry.log", rotation="10 MB")
 
 app.add_middleware(
     CORSMiddleware,

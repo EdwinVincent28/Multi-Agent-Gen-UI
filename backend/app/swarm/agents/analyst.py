@@ -1,13 +1,14 @@
 from langchain_core.prompts import ChatPromptTemplate
 from app.core.llm import get_llm
 from app.swarm.state import GraphState
+from loguru import logger
 
 def analyst_node(state: GraphState):
     """
     Takes clean JSON data from the state, performs statistical analysis, 
     and generates key business insights.
     """
-    print("--- ANALYST RUNNING ---")
+    logger.info("--- ANALYST RUNNING ---")
 
     llm = get_llm(temperature=0.2) 
 

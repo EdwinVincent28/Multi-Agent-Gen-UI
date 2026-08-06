@@ -5,6 +5,7 @@ from app.swarm.state import GraphState
 from langchain_core.runnables.config import RunnableConfig
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from loguru import logger
 
 async def trigger_mcp_deployment(ui_code: str, dataset_json: str) -> str:
     """Handles the asynchronous connection to the MCP Server."""
@@ -32,17 +33,17 @@ def devops_agent_node(state: GraphState, config: RunnableConfig):
     """
     Extracts the finalized UI code and data, and sends it to the MCP Server for deployment.
     """
-    print("--- DEVOPS AGENT RUNNING (MCP CLIENT INITIALIZED) ---")
+    logger.info("--- DEVOPS AGENT RUNNING (MCP CLIENT INITIALIZED) ---")
     
     ui_code = state.get("ui_code")
     clean_data = state.get("clean_data")
     
     if not ui_code:
-        print("No UI code found to deploy.")
+        logger.info("No UI code found to deploy.")
         return {"deployment_url": None}
         
     if not clean_data:
-        print("No dataset found to inject.")
+        logger.info("No dataset found to inject.")
         return {"deployment_url": None, "errors": "Missing clean_data"}
         
     dataset_json = json.dumps(clean_data) if not isinstance(clean_data, str) else clean_data
@@ -50,9 +51,9 @@ def devops_agent_node(state: GraphState, config: RunnableConfig):
     try:
         deployed_url = asyncio.run(trigger_mcp_deployment(ui_code, dataset_json))
         
-        print(f"--- DEPLOYMENT SUCCESS: {deployed_url} ---")
+        logger.info(f"--- DEPLOYMENT SUCCESS: {deployed_url} ---")
         return {"deployment_url": deployed_url}
         
     except Exception as e:
-        print(f"--- MCP DEPLOYMENT ERROR: {e} ---")
+        logger.error(f"--- MCP DEPLOYMENT ERROR: {e} ---")
         return {"deployment_url": None, "errors": str(e)}

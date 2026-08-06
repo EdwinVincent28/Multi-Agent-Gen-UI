@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
+from loguru import logger
 
 load_dotenv()
 
@@ -36,7 +37,7 @@ def save_dashboard_to_memory(session_id: str, insights: str, ui_code: str):
             )
         ]
     )
-    print(f"--- DASHBOARD {session_id} SAVED TO DOCKERIZED SEMANTIC MEMORY ---")
+    logger.info(f"--- DASHBOARD {session_id} SAVED TO DOCKERIZED SEMANTIC MEMORY ---")
 
 def retrieve_similar_dashboard(user_prompt: str) -> str | None:
     """Finds a previously generated dashboard similar to the current prompt."""
@@ -52,10 +53,10 @@ def retrieve_similar_dashboard(user_prompt: str) -> str | None:
     
     if hits:
         best_match = hits[0]
-        print(f"--- QDRANT MATCH SCORE: {best_match.score} ---")
+        logger.info(f"--- QDRANT MATCH SCORE: {best_match.score} ---")
         
         if best_match.score > 0.40: 
-            print("--- RETRIEVED RELEVANT UI FROM DOCKERIZED SEMANTIC MEMORY ---")
+            logger.info(f"--- RETRIEVED RELEVANT UI FROM DOCKERIZED SEMANTIC MEMORY ---")
             return best_match.payload.get("ui_code")
             
     return None

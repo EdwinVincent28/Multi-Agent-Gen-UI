@@ -5,6 +5,7 @@ from langchain_core.runnables.config import RunnableConfig
 from app.core.llm import get_llm
 from app.swarm.state import GraphState
 from app.services.memory_service import save_dashboard_to_memory
+from loguru import logger
 
 def frontend_engineer_node(state: GraphState, config: RunnableConfig):
     """
@@ -12,7 +13,7 @@ def frontend_engineer_node(state: GraphState, config: RunnableConfig):
     self-contained React component utilizing shadcn/ui and Tailwind CSS.
     Appends execution telemetry and handles feedback from the Evaluator node.
     """
-    print("--- FRONTEND ENGINEER RUNNING ---")
+    logger.info("--- FRONTEND ENGINEER RUNNING ---")
     start_time = time.time()
 
     llm = get_llm(temperature=0.2)

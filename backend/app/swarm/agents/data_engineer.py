@@ -1,13 +1,14 @@
 import csv
 import io
 from app.swarm.state import GraphState
+from loguru import logger
 
 def data_engineer_node(state: GraphState):
     """
     Deterministically parses raw CSV text into a clean Python list of dictionaries.
     Bypasses LLM token limits entirely.
     """
-    print("--- DATA ENGINEER RUNNING (DETERMINISTIC) ---")
+    logger.info("--- DATA ENGINEER RUNNING (DETERMINISTIC) ---")
     raw_text = state.get("raw_data", "")
 
     try:

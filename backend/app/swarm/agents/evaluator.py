@@ -3,13 +3,14 @@ import time
 from langchain_core.prompts import ChatPromptTemplate
 from app.core.llm import get_llm
 from app.swarm.state import GraphState
+from loguru import logger
 
 def evaluator_node(state: GraphState):
     """
     Evaluates generated UI code against schema rules and library constraints.
     Returns structured feedback and updates total telemetry metrics.
     """
-    print("--- EVALUATOR NODE RUNNING ---")
+    logger.info("--- EVALUATOR NODE RUNNING ---")
     start_time = time.time()
 
     llm = get_llm(temperature=0.0)
@@ -69,7 +70,7 @@ Return ONLY a valid, raw JSON object (no markdown code blocks, no trailing comme
         feedback = eval_result.get("feedback", [])
 
     except Exception as e:
-        print(f"Evaluator parsing error: {e}")
+        logger.error(f"Evaluator parsing error: {e}")
         passed = True
         feedback = []
         elapsed_time = time.time() - start_time

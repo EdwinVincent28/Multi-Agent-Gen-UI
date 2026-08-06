@@ -3,6 +3,7 @@ from app.core.threading import build_thread_id
 from fastapi import UploadFile
 from app.swarm.graph import swarm_graph
 from app.models.user import User
+from loguru import logger
 
 async def execute_generation_swarm(session_id: str, file: UploadFile, current_user: User) -> dict:
     try:
@@ -22,11 +23,11 @@ async def execute_generation_swarm(session_id: str, file: UploadFile, current_us
 
         final_state = await swarm_graph.ainvoke(initial_state, config=config)
 
-        print("\n=== END-TO-END TELEMETRY (GENERATION) ===")
-        print(json.dumps(final_state.get("telemetry", {}), indent=2))
+        logger.info("\n=== END-TO-END TELEMETRY (GENERATION) ===")
+        logger.info(json.dumps(final_state.get("telemetry", {}), indent=2))
         if final_state.get("retry_count"):
-            print(f"Retries triggered: {final_state['retry_count']}")
-        print("==========================================\n")
+            logger.info(f"Retries triggered: {final_state['retry_count']}")
+        logger.info("==========================================\n")
 
         if final_state.get("errors"):
             raise ValueError(final_state["errors"])
@@ -39,23 +40,23 @@ async def execute_generation_swarm(session_id: str, file: UploadFile, current_us
         await file.close()
 
 async def execute_chat_swarm(session_id: str, prompt: str, current_user: User) -> dict:
-    print(f"--- TRIGGERING CHAT FOR SESSION: {session_id} ---")
+    logger.info(f"--- TRIGGERING CHAT FOR SESSION: {session_id} ---")
 
     thread_id = build_thread_id(current_user.id, session_id)
     config = {"configurable": {"thread_id": thread_id}}
     
     final_state = await swarm_graph.ainvoke({"user_prompt": prompt}, config=config)
 
-    print("\n=== END-TO-END TELEMETRY (CHAT) ===")
-    print(json.dumps(final_state.get("telemetry", {}), indent=2))
+    logger.info("\n=== END-TO-END TELEMETRY (CHAT) ===")
+    logger.info(json.dumps(final_state.get("telemetry", {}), indent=2))
     if final_state.get("retry_count"):
-        print(f"Retries triggered: {final_state['retry_count']}")
-    print("==========================================\n")
+        logger.info(f"Retries triggered: {final_state['retry_count']}")
+    logger.info("==========================================\n")
 
     return final_state
 
 async def stream_chat_swarm(session_id: str, prompt: str, current_user: User):
-    print(f"--- STREAMING CHAT FOR SESSION: {session_id} ---")
+    logger.info(f"--- STREAMING CHAT FOR SESSION: {session_id} ---")
 
     thread_id = build_thread_id(current_user.id, session_id)
     config = {"configurable": {"thread_id": thread_id}}
@@ -77,8 +78,8 @@ async def stream_chat_swarm(session_id: str, prompt: str, current_user: User):
                 final_state = output
 
     if final_state:
-        print("\n=== END-TO-END TELEMETRY (STREAM CHAT) ===")
-        print(json.dumps(final_state.get("telemetry", {}), indent=2))
+        logger.info("\n=== END-TO-END TELEMETRY (STREAM CHAT) ===")
+        logger.info(json.dumps(final_state.get("telemetry", {}), indent=2))
         if final_state.get("retry_count"):
-            print(f"Retries triggered: {final_state['retry_count']}")
-        print("==========================================\n")
+            logger.info(f"Retries triggered: {final_state['retry_count']}")
+        logger.info("==========================================\n")

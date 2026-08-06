@@ -4,6 +4,7 @@ from redis.asyncio import Redis as AsyncRedis
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from dotenv import load_dotenv
+from loguru import logger
 
 from app.swarm.state import GraphState
 from app.swarm.agents.data_engineer import data_engineer_node
@@ -24,7 +25,7 @@ ENABLE_EVAL_GATE = True
 
 def semantic_memory_node(state: GraphState):
     """Queries Qdrant for past dashboards to inject as structural context."""
-    print("--- SEARCHING SEMANTIC MEMORY ---")
+    logger.info("--- SEARCHING SEMANTIC MEMORY ---")
 
     search_query = state.get("user_prompt")
 
