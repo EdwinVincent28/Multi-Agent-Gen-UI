@@ -18,6 +18,8 @@ To ensure production-grade reliability, the pipeline includes an **LLM-as-a-Judg
 - **Semantic UI Memory:** Qdrant vector search allows the system to recall and reuse previously generated, user-preferred UI patterns for similar datasets or prompts.
 - **Human-in-the-Loop Cloud Deployment:** An isolated Model Context Protocol (MCP) server containerizes the scaffolded dashboard and deploys it to Google Cloud Run — decoupled from the main backend so deployment can be audited and triggered independently.
 
+![Architecture Diagram](./assets/architecture.png)
+
 ## Tech Stack
 
 - **Backend:** Python, FastAPI, LangGraph, Loguru (Structured Logging), Redis (State Checkpointing), Qdrant (Vector Memory), SQLAlchemy (PostgreSQL)
@@ -61,6 +63,7 @@ To ensure production-grade reliability, the pipeline includes an **LLM-as-a-Judg
 - Docker Desktop
 - Python 3.10+
 - Node.js 18+
+- **Google Cloud Platform (GCP) Account** (Required only for the Cloud Run deployment feature)
 
 ### 2. Environment Variables
 

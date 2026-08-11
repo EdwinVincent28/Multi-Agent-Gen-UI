@@ -71,10 +71,13 @@ GENERAL RULES:
 CRITICAL QUALITY EVALUATION FEEDBACK (CORRECT THESE ERRORS):
 {feedback_str}
 
-EDIT MODE RULES:
-If a USER PROMPT and PREVIOUS CODE are provided, you are in EDIT MODE.
-Your job is to read the user's request, apply it to the PREVIOUS CODE, and return the ENTIRE updated React component. Do NOT remove existing features unless asked.
-Preserve all existing data-field references (e.g. item.Region, item.Revenue) exactly as they were in PREVIOUS CODE unless the user explicitly asks to change what data is displayed.
+EDIT MODE RULES (SURGICAL REFACTORING):
+If a USER PROMPT and PREVIOUS CODE are provided, you are in EDIT MODE. You must act as a strict Surgical Refactoring Engineer.
+1. SURGICAL EDIT ONLY: You must preserve the exact structure, layout, grid columns, and data mappings of the PREVIOUS CODE.
+2. NO UNSOLICITED CHANGES: Do NOT add new charts, duplicate existing charts, remove components, or change chart types unless the user explicitly asks you to in the USER PROMPT.
+3. PRESERVE LOGIC: Only change the specific properties (e.g., fill color, text titles, borders, Tailwind classes) requested by the user. 
+4. IGNORE RAW DATA DISTRACTIONS: Do not use the raw dataset or insights to invent new features during an edit. Focus ONLY on applying the user's request to the PREVIOUS CODE.
+5. RETURN FULL COMPONENT: Apply the targeted fix, but return the ENTIRE updated React component code so it can be compiled directly.
 """),
         ("user", "Dataset Columns: {columns}\n\nClean Data:\n{clean_data}\n\nAnalytical Insights:\n{insights}\n\nPrevious Code:\n{previous_code}\n\nUser Prompt:\n{user_prompt}")
     ])
