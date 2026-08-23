@@ -9,7 +9,7 @@ from loguru import logger
 
 def frontend_engineer_node(state: GraphState, config: RunnableConfig):
     """
-    Ingests clean data and analytical insights, then synthesizes a secure,
+    Ingests clean data, analytical insights, and visual blueprints, then synthesizes a secure,
     self-contained React component utilizing shadcn/ui and Tailwind CSS.
     Appends execution telemetry and handles feedback from the Evaluator node.
     """
@@ -21,18 +21,28 @@ def frontend_engineer_node(state: GraphState, config: RunnableConfig):
     clean_data = state.get("clean_data", [])
     columns = list(clean_data[0].keys()) if clean_data else []
     eval_feedback = state.get("eval_feedback", [])
+    
+    # Extract the new UI Blueprint from the Vision Node
+    ui_blueprint = state.get("ui_blueprint")
+    blueprint_instruction = ""
+    if ui_blueprint:
+        blueprint_instruction = f"""
+CRITICAL INSTRUCTION: The user provided a visual wireframe blueprint. You MUST strictly structure your React layout and component hierarchy to match this exact JSON blueprint:
+{ui_blueprint}
+"""
 
     feedback_str = "\n".join([f"- {item}" for item in eval_feedback]) if eval_feedback else "None."
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an expert Frontend Architect specialized in React, TypeScript, Tailwind CSS, and shadcn/ui.
-Your job is to look at a clean JSON dataset and its analytical insights, and generate a beautiful, completely self-contained interactive dashboard component.
+Your job is to look at a clean JSON dataset, analytical insights, and UI blueprints, and generate a beautiful, completely self-contained interactive dashboard component.
 
 ENVIRONMENT CONSTRAINTS:
 - Framework: React with TypeScript (Vite).
 - Styling: Tailwind CSS.
 - Component Library: Shadcn UI + Lucide React icons.
 - CRITICAL: You must import icons from "lucide-react". NEVER use "lucide-react-native" or "react-icons".
+{blueprint_instruction}
 
 CRITICAL SHADCN UI RULES (DO NOT HALLUCINATE):
 1. TABLES: The <TableHeader> tag MUST wrap the <TableRow>. The <TableHead> tag represents the individual cell.
@@ -48,12 +58,12 @@ CRITICAL DATA RENDERING RULES (DO NOT HALLUCINATE COLUMNS):
 1. Each item in the 'data' array is an OBJECT, not a primitive. The exact keys are given in "Dataset Columns" below.
 2. NEVER render {{item}} directly inside a <TableCell> or anywhere else — 'item' is an object and this WILL crash with "Objects are not valid as a React child".
 3. You MUST access specific fields by name, e.g. <TableCell>{{item.Region}}</TableCell>, using ONLY the keys listed in Dataset Columns.
-4. <TableHead> labels MUST be the real column names from Dataset Columns — NEVER use generic placeholders like "Column 1", "Column 2", "Value", or "Item".
+4. <TableHead> labels MUST be the real column names from Dataset Columns — NEVER use generic placeholders like "Column 1" or "Value".
 5. If Dataset Columns is empty, do not invent a data shape — render a clear empty/loading state instead.
          
-CRITICAL CHARTING RULES (DO NOT HALLUCINATE LIBRARIES):
-1. The ONLY charting library available is "recharts". These components are pre-injected into your environment: BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer.
-2. NEVER import or use "chart.js", "react-chartjs-2", or any other charting library — they are NOT available and will crash with "X is not defined".
+DEPENDENCY & LIBRARY RULES:
+1. You may import standard NPM packages (e.g., 'recharts', 'framer-motion', 'clsx'). The DevOps agent will automatically install any missing packages detected in your import statements.
+2. For charting, 'recharts' is highly recommended. 
 3. NEVER use <canvas>, <script> tags, or manual DOM chart initialization (e.g. document.getElementById, new Chart(...)) — this is a React-only sandbox.
 
 GENERAL RULES:
@@ -64,7 +74,6 @@ GENERAL RULES:
    Example imports you should use:
    - import {{ Card, CardContent, CardHeader, CardTitle, CardDescription }} from "@/components/ui/card"
    - import {{ Badge }} from "@/components/ui/badge"
-   - import {{ Button }} from "@/components/ui/button"
    - import {{ Table, TableBody, TableCell, TableHead, TableHeader, TableRow }} from "@/components/ui/table"
 5. CRITICAL: A global variable named 'data' containing the JSON array is already injected into your environment. You MUST use this global 'data' variable directly. DO NOT declare a local state variable named 'data' (e.g., never write const [data, setData] = useState(data)).
 
@@ -90,7 +99,8 @@ If a USER PROMPT and PREVIOUS CODE are provided, you are in EDIT MODE. You must 
         "insights": state.get("insights", ""),
         "previous_code": state.get("ui_code", "None provided."),
         "user_prompt": state.get("user_prompt", "None provided."),
-        "feedback_str": feedback_str
+        "feedback_str": feedback_str,
+        "blueprint_instruction": blueprint_instruction
     })
 
     elapsed_time = time.time() - start_time

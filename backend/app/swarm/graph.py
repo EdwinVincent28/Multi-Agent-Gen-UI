@@ -12,6 +12,7 @@ from app.swarm.agents.analyst import analyst_node
 from app.swarm.agents.frontend_engineer import frontend_engineer_node
 from app.swarm.agents.devops_agent import devops_agent_node
 from app.swarm.agents.evaluator import evaluator_node 
+from app.swarm.agents.vision_analyst import vision_analyst_node
 
 from app.services.memory_service import retrieve_similar_dashboard
 
@@ -58,6 +59,7 @@ def build_graph():
     workflow.add_node("data_engineer", data_engineer_node)
     workflow.add_node("analyst", analyst_node)
     workflow.add_node("semantic_memory", semantic_memory_node)
+    workflow.add_node("Vision Analyst", vision_analyst_node)
     workflow.add_node("frontend_engineer", frontend_engineer_node)
     workflow.add_node("devops_agent", devops_agent_node)
     workflow.add_node("evaluator", evaluator_node)
@@ -82,7 +84,8 @@ def build_graph():
     )
 
     workflow.add_edge("analyst", "semantic_memory")
-    workflow.add_edge("semantic_memory", "frontend_engineer")
+    workflow.add_edge("semantic_memory", "vision_analyst") 
+    workflow.add_edge("vision_analyst", "frontend_engineer")
     
     def route_after_frontend(state: GraphState):
         if not ENABLE_EVAL_GATE:
