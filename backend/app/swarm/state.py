@@ -14,3 +14,5 @@ class GraphState(TypedDict):
     eval_feedback: Optional[list[str]]
     retry_count: Optional[int]
     telemetry: Optional[dict[str, Any]]
+    uploaded_image_base64: Optional[str]
+    ui_blueprint: Optional[str]
