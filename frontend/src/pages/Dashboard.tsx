@@ -3,13 +3,17 @@ import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Activity, LogOut, Cloud, ExternalLink } from "lucide-react"
+import { Activity, LogOut, Cloud, ExternalLink, Image as ImageIcon } from "lucide-react"
 
 import SandboxRenderer from "@/components/SandboxRenderer"
 
 export default function Dashboard() {
   const navigate = useNavigate()
   const [file, setFile] = useState<File | null>(null)
+  
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [imageBase64, setImageBase64] = useState<string | null>(null)
+  
   const [isLoading, setIsLoading] = useState(false)
   const [generatedCode, setGeneratedCode] = useState<string | null>(null)
   const [dataset, setDataset] = useState<any[] | null>(null)
@@ -27,6 +31,20 @@ export default function Dashboard() {
     navigate("/login")
   }
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setImagePreview(URL.createObjectURL(file))
+      
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        const base64String = (reader.result as string).split(',')[1]
+        setImageBase64(base64String)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
   const handleGenerate = async () => {
     const token = localStorage.getItem("jwt_token")
     if (!file || !token) return
@@ -36,6 +54,10 @@ export default function Dashboard() {
     const formData = new FormData()
     formData.append("file", file)
     formData.append("session_id", sessionId)
+    
+    if (imageBase64) {
+      formData.append("uploaded_image_base64", imageBase64)
+    }
 
     try {
       const res = await fetch("http://127.0.0.1:8000/api/v1/generate", {
@@ -175,11 +197,31 @@ export default function Dashboard() {
             <CardTitle className="flex items-center gap-2">
               <Activity className="text-blue-500" /> Data Ingestion Engine
             </CardTitle>
-            <CardDescription>Upload a CSV to trigger the LangGraph generation swarm.</CardDescription>
+            <CardDescription>Upload a CSV and an optional wireframe to trigger the LangGraph swarm.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Input type="file" accept=".csv,.json" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-            <Button onClick={handleGenerate} disabled={!file || isLoading} className="w-full">
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">1. Upload Dataset (CSV)</label>
+                <Input type="file" accept=".csv,.json" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 flex items-center gap-1">
+                  <ImageIcon size={14} /> 2. Upload Wireframe (Optional)
+                </label>
+                <Input type="file" accept="image/*" onChange={handleImageUpload} />
+              </div>
+            </div>
+
+            {imagePreview && (
+              <div className="mt-4 border border-slate-200 rounded-lg p-2 bg-white inline-block">
+                <p className="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wider">Wireframe Preview</p>
+                <img src={imagePreview} alt="Wireframe" className="h-32 w-auto rounded object-contain" />
+              </div>
+            )}
+
+            <Button onClick={handleGenerate} disabled={!file || isLoading} className="w-full mt-4">
               {isLoading ? "Swarm is generating UI..." : "Generate Dashboard"}
             </Button>
           </CardContent>

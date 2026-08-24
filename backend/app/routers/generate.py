@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, File, Form, UploadFile, WebSocket, WebSocketDisconnect
+from typing import Optional
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.schemas import GenerationResponse, ChatRequest
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/api/v1", tags=["Generation"])
 async def generate_dashboard(
     session_id: str = Form(..., description="Unique ID for the conversation thread"),
     file: UploadFile = File(..., description="The CSV or JSON file uploaded by the user"),
+    uploaded_image_base64: Optional[str] = Form(None),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -23,7 +25,12 @@ async def generate_dashboard(
     Requires a valid JWT Bearer token.
     """
     try:
-        final_state = await execute_generation_swarm(session_id, file, current_user)
+        final_state = await execute_generation_swarm(
+            session_id, 
+            file, 
+            current_user, 
+            uploaded_image_base64
+        )
 
         if final_state.get("errors"):
             raise ValueError(final_state["errors"])

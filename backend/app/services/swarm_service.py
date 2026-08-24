@@ -5,17 +5,20 @@ from app.swarm.graph import swarm_graph
 from app.models.user import User
 from loguru import logger
 
-async def execute_generation_swarm(session_id: str, file: UploadFile, current_user: User) -> dict:
+async def execute_generation_swarm(session_id: str, file: UploadFile, current_user: User, uploaded_image_base64: str = None) -> dict:
     try:
-        file_bytes = await file.read()
-        raw_text = file_bytes.decode("utf-8")
+        raw_data_string = await file.read()
+        if isinstance(raw_data_string, bytes):
+            raw_data_string = raw_data_string.decode('utf-8')
 
         initial_state = {
-            "raw_data": raw_text,
+            "raw_data": raw_data_string,
             "clean_data": None,
             "insights": None,
             "ui_code": None,
-            "errors": None
+            "errors": None,
+            "uploaded_image_base64": uploaded_image_base64,
+            "eval_feedback": []
         }
 
         thread_id = build_thread_id(current_user.id, session_id)

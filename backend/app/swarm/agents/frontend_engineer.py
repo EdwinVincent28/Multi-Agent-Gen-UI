@@ -2,7 +2,7 @@ import re
 import time
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables.config import RunnableConfig
-from app.core.llm import get_llm
+from app.core.llm import get_llm, extract_text_content
 from app.swarm.state import GraphState
 from app.services.memory_service import save_dashboard_to_memory
 from loguru import logger
@@ -16,22 +16,61 @@ def frontend_engineer_node(state: GraphState, config: RunnableConfig):
     logger.info("--- FRONTEND ENGINEER RUNNING ---")
     start_time = time.time()
 
-    llm = get_llm(temperature=0.2)
+    llm = get_llm(temperature=0.2, thinking_level="medium")
 
-    clean_data = state.get("clean_data", [])
+    clean_data = state.get("clean_data") or []
     columns = list(clean_data[0].keys()) if clean_data else []
     eval_feedback = state.get("eval_feedback", [])
-    
-    # Extract the new UI Blueprint from the Vision Node
+
+    raw_previous_code = state.get("ui_code") or "None provided."
+    raw_user_prompt = state.get("user_prompt") or "None provided."
+
+    is_edit_mode = raw_user_prompt != "None provided." and raw_previous_code != "None provided."
+
+    SAMPLE_ROWS = 8
+    if is_edit_mode:
+        sample_data = []
+        sample_note = " (omitted in edit mode — see EDIT MODE RULES)"
+    else:
+        sample_data = clean_data[:SAMPLE_ROWS]
+        total_rows = len(clean_data)
+        sample_note = (
+            f"\n(Showing {len(sample_data)} of {total_rows} total rows as a representative sample — "
+            f"infer types and shape from this, do not assume this is the full dataset.)"
+            if total_rows > SAMPLE_ROWS else ""
+        )
+
+    insights_for_prompt = "(omitted in edit mode — see EDIT MODE RULES)" if is_edit_mode else (state.get("insights") or "")
+
     ui_blueprint = state.get("ui_blueprint")
     blueprint_instruction = ""
-    if ui_blueprint:
+    if ui_blueprint and not is_edit_mode:
         blueprint_instruction = f"""
-CRITICAL INSTRUCTION: The user provided a visual wireframe blueprint. You MUST strictly structure your React layout and component hierarchy to match this exact JSON blueprint:
+CRITICAL INSTRUCTION: The user provided a visual wireframe blueprint as JSON below. This is not a loose suggestion — you MUST treat it as the exact spec for your layout:
+1. Render EVERY item listed in the blueprint's grid.rows — every KPI, every chart, in the order given. Do not omit any.
+2. Match each item's colSpan value to a Tailwind "col-span-{{N}}" class within a 12-column grid, exactly as specified — do not substitute a different layout (e.g. do not stack everything full-width if the blueprint specifies a multi-column row).
+3. Match each chart's declared "type" (e.g. AreaChart, HorizontalBarChart) to the correct recharts component and orientation — an AreaChart must not become a table, a HorizontalBarChart must use layout="vertical".
+4. Do NOT invent, add, or substitute any component, section, chart, or table that is not present in the blueprint JSON below — no extra "Recent Transactions" tables, no additional cards, nothing beyond what is explicitly listed.
+5. Use the blueprint's theme colors (background, cardBackground, primaryColor, textPrimary, textSecondary) and header title/subtitle exactly as given.
+6. Each item may include a "dataMapping" field describing what data it should show and how (e.g. "revenue summed by product category", "daily revenue trend over the date range"). Use this to decide which real column(s) from Dataset Columns to group/aggregate by and which aggregation (sum, average, count) to apply — do not guess a different grouping than what dataMapping describes, and do not fall back to hardcoded/sample numbers when real data is available.
+
+Blueprint JSON:
 {ui_blueprint}
 """
 
     feedback_str = "\n".join([f"- {item}" for item in eval_feedback]) if eval_feedback else "None."
+
+    # previous_code still carries the full prior generated component in edit
+    # mode — this one we keep, since edit mode genuinely needs it. Cap it
+    # defensively so one oversized component can't blow the limit alone.
+    MAX_PREV_CODE_CHARS = 14000  # ~3.5k tokens, rough estimate — leaves headroom for system prompt + edit request
+    if len(raw_previous_code) > MAX_PREV_CODE_CHARS:
+        previous_code_for_prompt = (
+            raw_previous_code[:MAX_PREV_CODE_CHARS]
+            + f"\n\n// ... TRUNCATED ({len(raw_previous_code) - MAX_PREV_CODE_CHARS} more characters not shown) ..."
+        )
+    else:
+        previous_code_for_prompt = raw_previous_code
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an expert Frontend Architect specialized in React, TypeScript, Tailwind CSS, and shadcn/ui.
@@ -62,9 +101,27 @@ CRITICAL DATA RENDERING RULES (DO NOT HALLUCINATE COLUMNS):
 5. If Dataset Columns is empty, do not invent a data shape — render a clear empty/loading state instead.
          
 DEPENDENCY & LIBRARY RULES:
-1. You may import standard NPM packages (e.g., 'recharts', 'framer-motion', 'clsx'). The DevOps agent will automatically install any missing packages detected in your import statements.
-2. For charting, 'recharts' is highly recommended. 
-3. NEVER use <canvas>, <script> tags, or manual DOM chart initialization (e.g. document.getElementById, new Chart(...)) — this is a React-only sandbox.
+1. CRITICAL: The live preview (SandboxRenderer) runs your code in an in-browser sandbox with a FIXED, pre-bundled set of available imports — it cannot dynamically load a newly-npm-installed package the way the final deployed dashboard can. You MUST only import from this exact allowed set, or the live preview will break with a runtime "X is not defined" error even though the code looks syntactically correct:
+   - "react" (React, useState, useMemo)
+   - "recharts" (BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer)
+   - "lucide-react" (any icon)
+   - "@/components/ui/card" (Card, CardContent, CardHeader, CardTitle, CardDescription)
+   - "@/components/ui/badge" (Badge)
+   - "@/components/ui/button" (Button)
+   - "@/components/ui/table" (Table, TableBody, TableCell, TableHead, TableHeader, TableRow)
+   - "clsx" (default export, for conditional className logic)
+   - "framer-motion" (motion, AnimatePresence — for transitions/animation polish only, do not overuse)
+2. Do NOT import date-fns, lodash, or any other package not listed above, even though it is a "standard" NPM package — it will not be defined in the live preview sandbox.
+3. For charting, 'recharts' is the only supported charting library.
+4. NEVER use <canvas>, <script> tags, or manual DOM chart initialization (e.g. document.getElementById, new Chart(...)) — this is a React-only sandbox.
+
+CRITICAL LAYOUT & SIZING RULE (READ CAREFULLY — THIS CAUSES INVISIBLE/BROKEN LAYOUTS IF IGNORED):
+The live preview's Tailwind CSS is pre-compiled from this app's own static source files at build time. It does NOT re-scan your generated code, so any Tailwind utility class you use that doesn't already exist in the pre-built stylesheet (e.g. "grid-cols-12", "col-span-8", "h-[300px]") will be silently ignored — the className is applied but produces NO visual effect, with no error thrown. This causes two specific failures: a 12-column grid layout collapsing into plain stacked full-width blocks, and chart containers collapsing to zero height so ResponsiveContainer renders nothing.
+To guarantee correct rendering, use INLINE STYLE OBJECTS (not Tailwind classes) for these two things specifically:
+1. Grid container: style={{{{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '1.5rem' }}}}
+2. Each grid item's span: style={{{{ gridColumn: `span ${{colSpanNumber}} / span ${{colSpanNumber}}` }}}}
+3. Chart wrapper height (the div directly wrapping ResponsiveContainer): style={{{{ height: '300px', width: '100%' }}}}
+You may continue using Tailwind classes for everything else (padding, colors, text sizing, rounded corners, shadows, borders) — those base utilities from the shadcn/ui component library ARE already compiled and available. Only grid structure and explicit pixel heights need inline styles.
 
 GENERAL RULES:
 1. Return ONLY executable React component code. 
@@ -88,17 +145,18 @@ If a USER PROMPT and PREVIOUS CODE are provided, you are in EDIT MODE. You must 
 4. IGNORE RAW DATA DISTRACTIONS: Do not use the raw dataset or insights to invent new features during an edit. Focus ONLY on applying the user's request to the PREVIOUS CODE.
 5. RETURN FULL COMPONENT: Apply the targeted fix, but return the ENTIRE updated React component code so it can be compiled directly.
 """),
-        ("user", "Dataset Columns: {columns}\n\nClean Data:\n{clean_data}\n\nAnalytical Insights:\n{insights}\n\nPrevious Code:\n{previous_code}\n\nUser Prompt:\n{user_prompt}")
+        ("user", "Dataset Columns: {columns}\n\nSample Data:{sample_note}\n{clean_data}\n\nAnalytical Insights:\n{insights}\n\nPrevious Code:\n{previous_code}\n\nUser Prompt:\n{user_prompt}")
     ])
 
     chain = prompt | llm
 
     response = chain.invoke({
         "columns": columns,
-        "clean_data": clean_data,
-        "insights": state.get("insights", ""),
-        "previous_code": state.get("ui_code", "None provided."),
-        "user_prompt": state.get("user_prompt", "None provided."),
+        "clean_data": sample_data,
+        "sample_note": sample_note,
+        "insights": insights_for_prompt,
+        "previous_code": previous_code_for_prompt,
+        "user_prompt": raw_user_prompt,
         "feedback_str": feedback_str,
         "blueprint_instruction": blueprint_instruction
     })
@@ -111,7 +169,9 @@ If a USER PROMPT and PREVIOUS CODE are provided, you are in EDIT MODE. You must 
     elif hasattr(response, "response_metadata") and "token_usage" in response.response_metadata:
         tokens_used = response.response_metadata["token_usage"].get("total_tokens", 0)
 
-    raw_content = response.content
+    raw_content = extract_text_content(response.content)
+
+    raw_content = re.sub(r'<think>.*?</think>', '', raw_content, flags=re.DOTALL)
 
     code_blocks = re.findall(
         r"```(?:tsx|jsx|typescript|javascript|ts|js)?\s*\n([\s\S]*?)```",

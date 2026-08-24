@@ -1,7 +1,8 @@
 import json
 import time
+import re
 from langchain_core.prompts import ChatPromptTemplate
-from app.core.llm import get_llm
+from app.core.llm import get_llm, extract_text_content
 from app.swarm.state import GraphState
 from loguru import logger
 
@@ -15,9 +16,18 @@ def evaluator_node(state: GraphState):
 
     llm = get_llm(temperature=0.0)
 
-    ui_code = state.get("ui_code", "")
-    clean_data = state.get("clean_data", [])
+    ui_code = state.get("ui_code") or ""
+    clean_data = state.get("clean_data") or []
     columns = list(clean_data[0].keys()) if clean_data else []
+
+    MAX_UI_CODE_CHARS = 14000  
+    if len(ui_code) > MAX_UI_CODE_CHARS:
+        review_code = (
+            ui_code[:MAX_UI_CODE_CHARS]
+            + f"\n\n// ... TRUNCATED FOR REVIEW ({len(ui_code) - MAX_UI_CODE_CHARS} more characters not shown) ..."
+        )
+    else:
+        review_code = ui_code
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an automated Code QA Evaluator for a React dashboard system.
@@ -50,7 +60,7 @@ Return ONLY a valid, raw JSON object (no markdown code blocks, no trailing comme
     try:
         response = chain.invoke({
             "columns": columns,
-            "ui_code": ui_code
+            "ui_code": review_code
         })
         
         elapsed_time = time.time() - start_time
@@ -61,9 +71,13 @@ Return ONLY a valid, raw JSON object (no markdown code blocks, no trailing comme
         elif hasattr(response, "response_metadata") and "token_usage" in response.response_metadata:
             tokens_used = response.response_metadata["token_usage"].get("total_tokens", 0)
 
-        content = response.content.strip()
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        content = re.sub(r'<think>.*?</think>', '', extract_text_content(response.content), flags=re.DOTALL).strip()
+        
+        start_idx = content.find('{')
+        end_idx = content.rfind('}')
+        
+        if start_idx != -1 and end_idx != -1:
+            content = content[start_idx:end_idx + 1]
 
         eval_result = json.loads(content)
         passed = eval_result.get("pass", False)

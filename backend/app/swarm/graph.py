@@ -22,7 +22,7 @@ redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 redis_client = AsyncRedis.from_url(redis_url)
 memory_saver = AsyncRedisSaver(redis_client=redis_client)
 
-ENABLE_EVAL_GATE = True 
+ENABLE_EVAL_GATE = False 
 
 def semantic_memory_node(state: GraphState):
     """Queries Qdrant for past dashboards to inject as structural context."""
@@ -59,7 +59,7 @@ def build_graph():
     workflow.add_node("data_engineer", data_engineer_node)
     workflow.add_node("analyst", analyst_node)
     workflow.add_node("semantic_memory", semantic_memory_node)
-    workflow.add_node("Vision Analyst", vision_analyst_node)
+    workflow.add_node("vision_analyst", vision_analyst_node)
     workflow.add_node("frontend_engineer", frontend_engineer_node)
     workflow.add_node("devops_agent", devops_agent_node)
     workflow.add_node("evaluator", evaluator_node)

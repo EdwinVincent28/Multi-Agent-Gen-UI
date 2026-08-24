@@ -1,5 +1,5 @@
 from langchain_core.prompts import ChatPromptTemplate
-from app.core.llm import get_llm
+from app.core.llm import get_llm, extract_text_content
 from app.swarm.state import GraphState
 from loguru import logger
 
@@ -29,4 +29,4 @@ RULES:
     
     response = chain.invoke({"clean_data": state["clean_data"]})
 
-    return {"insights": response.content}
+    return {"insights": extract_text_content(response.content)}

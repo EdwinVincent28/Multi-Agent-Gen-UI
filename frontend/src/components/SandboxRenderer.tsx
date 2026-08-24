@@ -9,8 +9,11 @@ import * as LucideIcons from "lucide-react"
 import { Eye, Code } from "lucide-react"
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from "recharts"
+import clsx from "clsx"
+import { motion, AnimatePresence } from "framer-motion"
 
 const scope = {
   React,
@@ -31,7 +34,11 @@ const scope = {
   TableHeader,
   TableRow,   
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  clsx,
+  motion,
+  AnimatePresence,
 }
 
 export default function SandboxRenderer({ 
@@ -59,13 +66,34 @@ export default function SandboxRenderer({
     let processed = codeString
       .replace(/```[a-zA-Z]*\n?/g, "")
       .replace(/```/g, "")
-      .split('\n')
-      .filter(line => !line.trim().startsWith('import'))
-      .join('\n')
-      .replace(/export default \w+;?/g, "")
       .trim()
 
-    processed += "\n\nrender(<Dashboard />);"
+    processed = processed
+      .replace(/import\s+[\s\S]*?from\s+['"][^'"]+['"];?/g, "")
+      .replace(/import\s+['"][^'"]+['"];?/g, "")
+      .trim()
+
+    let componentName = "Dashboard" 
+
+    const inlineFnMatch = processed.match(/export\s+default\s+function\s+(\w+)/)
+    if (inlineFnMatch) {
+      componentName = inlineFnMatch[1]
+      processed = processed.replace(/export\s+default\s+(?=function\s+\w+)/, "")
+    } else {
+      const refMatch = processed.match(/export\s+default\s+(\w+)\s*;?/)
+      if (refMatch) {
+        componentName = refMatch[1]
+        processed = processed.replace(/export\s+default\s+\w+\s*;?/, "")
+      } else {
+        processed = processed.replace(/export\s+default\s+/, "")
+        const fnDeclMatch = processed.match(/function\s+(\w+)\s*\(/)
+        const constDeclMatch = processed.match(/const\s+(\w+)\s*(?::[^=]+)?=\s*\(?[^=]*=>/)
+        if (fnDeclMatch) componentName = fnDeclMatch[1]
+        else if (constDeclMatch) componentName = constDeclMatch[1]
+      }
+    }
+
+    processed += `\n\nrender(<${componentName} />);`
 
     return processed
   }, [codeString])
