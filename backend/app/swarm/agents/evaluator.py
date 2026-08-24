@@ -7,7 +7,7 @@ from loguru import logger
 
 def evaluator_node(state: GraphState):
     """
-    Evaluates generated UI code against schema rules and library constraints.
+    Evaluates generated UI code against schema rules, layout integrity, and library constraints.
     Returns structured feedback and updates total telemetry metrics.
     """
     logger.info("--- EVALUATOR NODE RUNNING ---")
@@ -32,8 +32,8 @@ REACT CODE TO REVIEW:
 RULES TO CHECK:
 1. COLUMN GROUNDEDNESS: Does the code access object properties using real column names (e.g., item.Region)? Mark FAIL if generic placeholders (item.Column1, item.Value) or non-existent column names are used.
 2. SHADCN UI COMPLIANCE: If <Table> components are used, is <TableHeader> wrapping <TableRow>? Mark FAIL if <TableHead> wraps <TableRow>.
-3. CHART LIBRARIES: Is recharts used for charts? Mark FAIL if "chart.js", "react-chartjs-2", or <canvas> tags are used.
-4. SYNTAX INTEGRITY: Does the code contain valid React imports and export a default function?
+3. THIRD-PARTY PACKAGES & CHARTING: Standard NPM packages (e.g., recharts, framer-motion, lucide-react) are permitted. Mark FAIL ONLY if legacy/incompatible libraries like "chart.js", "react-chartjs-2", or raw <canvas> DOM manipulation are used.
+4. SYNTAX INTEGRITY: Does the code contain valid React imports, adhere to TypeScript typing rules (e.g., in .reduce()), and export a functional component?
 
 OUTPUT FORMAT:
 Return ONLY a valid, raw JSON object (no markdown code blocks, no trailing comments):
