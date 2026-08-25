@@ -3,7 +3,7 @@ from typing import Optional
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.schemas import GenerationResponse, ChatRequest
-from app.services.swarm_service import execute_generation_swarm, execute_chat_swarm, stream_chat_swarm
+from app.services.swarm_service import execute_generation_swarm, execute_chat_swarm, stream_chat_swarm, stream_generation_swarm
 import json
 from app.core.security import SECRET_KEY, ALGORITHM
 import jwt
@@ -78,7 +78,76 @@ async def chat_with_dashboard(
     except Exception as e:
         logger.error(f"Chat Endpoint Error: {e}")
         raise HTTPException(status_code=500, detail="An error occurred while updating the dashboard.")
-    
+
+
+def _authenticate_ws_token(token: str, db: Session) -> User:
+    """Shared JWT validation for WebSocket endpoints. Raises ValueError on any failure."""
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    email = payload.get("sub")
+    if email is None:
+        raise ValueError("Token payload missing sub (email)")
+
+    current_user = db.query(User).filter(User.email == email).first()
+    if not current_user:
+        raise ValueError("User not found in database")
+
+    return current_user
+
+
+@router.websocket("/ws/generate/{session_id}")
+async def websocket_generate_endpoint(
+    websocket: WebSocket,
+    session_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Streams the full first-generation pipeline: status updates as each
+    agent node starts (data parsing, analysis, wireframe examination,
+    code writing, review), plus token-by-token code streaming during the
+    frontend_engineer step
+    """
+    await websocket.accept()
+
+    try:
+        data = await websocket.receive_json()
+        token = data.get("token")
+        csv_content = data.get("csv_content")
+        uploaded_image_base64 = data.get("uploaded_image_base64")
+
+        if not token or not csv_content:
+            await websocket.send_json({"type": "error", "message": "Missing token or csv_content"})
+            await websocket.close(code=1008)
+            return
+
+        try:
+            current_user = _authenticate_ws_token(token, db)
+        except jwt.ExpiredSignatureError:
+            await websocket.send_json({"type": "error", "message": "Token expired"})
+            await websocket.close(code=1008)
+            return
+        except Exception as e:
+            await websocket.send_json({"type": "error", "message": f"Error validating token: {str(e)}"})
+            await websocket.close(code=1008)
+            return
+
+        async for message in stream_generation_swarm(
+            session_id, csv_content, current_user, uploaded_image_base64
+        ):
+            await websocket.send_json(message)
+
+        await websocket.send_text("<END_OF_STREAM>")
+
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected gracefully for generation session {session_id}")
+    except Exception as e:
+        import traceback
+        logger.error("\n--- FULL WEBSOCKET TRACEBACK (GENERATE) ---")
+        traceback.print_exc()
+        logger.error(f"WebSocket Error: {e}")
+        await websocket.send_json({"type": "error", "message": repr(e)})
+        await websocket.close(code=1011)
+
+
 @router.websocket("/ws/chat/{session_id}")
 async def websocket_chat_endpoint(
     websocket: WebSocket, 
@@ -102,15 +171,7 @@ async def websocket_chat_endpoint(
             return
 
         try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            email = payload.get("sub")
-            if email is None:
-                raise ValueError("Token payload missing sub (email)")
-            
-            current_user = db.query(User).filter(User.email == email).first()
-            if not current_user:
-                raise ValueError("User not found in database")
-
+            current_user = _authenticate_ws_token(token, db)
         except jwt.ExpiredSignatureError:
             await websocket.send_text("Error: Token expired")
             await websocket.close(code=1008)

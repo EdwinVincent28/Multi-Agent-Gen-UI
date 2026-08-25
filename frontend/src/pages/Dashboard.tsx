@@ -7,6 +7,17 @@ import { Activity, LogOut, Cloud, ExternalLink, Image as ImageIcon } from "lucid
 
 import SandboxRenderer from "@/components/SandboxRenderer"
 
+// Reads a File as plain text. Used for the CSV, which now travels over the
+// WebSocket as a JSON string field instead of multipart/FormData 
+function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(file)
+  })
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const [file, setFile] = useState<File | null>(null)
@@ -15,6 +26,7 @@ export default function Dashboard() {
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   
   const [isLoading, setIsLoading] = useState(false)
+  const [generationStatus, setGenerationStatus] = useState<string | null>(null)
   const [generatedCode, setGeneratedCode] = useState<string | null>(null)
   const [dataset, setDataset] = useState<any[] | null>(null)
 
@@ -48,38 +60,83 @@ export default function Dashboard() {
   const handleGenerate = async () => {
     const token = localStorage.getItem("jwt_token")
     if (!file || !token) return
-    
-    setIsLoading(true)
-    setDeploymentUrl(null)
-    const formData = new FormData()
-    formData.append("file", file)
-    formData.append("session_id", sessionId)
-    
-    if (imageBase64) {
-      formData.append("uploaded_image_base64", imageBase64)
+
+    let csvContent: string
+    try {
+      csvContent = await readFileAsText(file)
+    } catch (error) {
+      console.error("Failed to read CSV file:", error)
+      return
     }
 
-    try {
-      const res = await fetch("http://127.0.0.1:8000/api/v1/generate", {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${token}` },
-        body: formData
-      })
-      
-      if (res.status === 401) {
-        handleLogout() 
+    setIsLoading(true)
+    setGenerationStatus("Connecting...")
+    setGeneratedCode("")
+    setDataset(null)
+    setDeploymentUrl(null)
+
+    const ws = new WebSocket(`ws://127.0.0.1:8000/api/v1/ws/generate/${sessionId}`)
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({
+        token: token,
+        csv_content: csvContent,
+        uploaded_image_base64: imageBase64 || undefined,
+      }))
+    }
+
+    ws.onmessage = (event) => {
+      const raw = event.data
+
+      if (raw === "<END_OF_STREAM>") {
+        ws.close()
         return
       }
 
-      const data = await res.json()
-      if (data.ui_code) {
-        setGeneratedCode(data.ui_code)
-        setDataset(data.data) 
+      let message: any
+      try {
+        message = JSON.parse(raw)
+      } catch {
+        console.error("Received non-JSON message from /ws/generate:", raw)
+        return
       }
-    } catch (error) {
-      console.error("Generation failed:", error)
-    } finally {
+
+      switch (message.type) {
+        case "status":
+          setGenerationStatus(message.message)
+          break
+
+        case "code_chunk":
+          setGeneratedCode((prev) => (prev || "") + message.content)
+          break
+
+        case "final":
+          if (message.ui_code) {
+            setGeneratedCode(message.ui_code)
+          }
+          setDataset(message.data ?? null)
+          setGenerationStatus(null)
+          break
+
+        case "error":
+          console.error("Generation error:", message.message)
+          setGenerationStatus(null)
+          break
+
+        default:
+          console.warn("Unknown message type from /ws/generate:", message)
+      }
+    }
+
+    ws.onerror = (error) => {
+      console.error("WebSocket Error:", error)
       setIsLoading(false)
+      setGenerationStatus(null)
+    }
+
+    ws.onclose = () => {
+      setIsLoading(false)
+      setGenerationStatus(null)
     }
   }
 
@@ -207,8 +264,8 @@ export default function Dashboard() {
                 <Input type="file" accept=".csv,.json" onChange={(e) => setFile(e.target.files?.[0] || null)} />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700 flex items-center gap-1">
-                  <ImageIcon size={14} /> 2. Upload Wireframe (Optional)
+                <label className="text-sm font-medium text-slate-700">
+                   2. Upload Wireframe (Optional)
                 </label>
                 <Input type="file" accept="image/*" onChange={handleImageUpload} />
               </div>
@@ -222,12 +279,12 @@ export default function Dashboard() {
             )}
 
             <Button onClick={handleGenerate} disabled={!file || isLoading} className="w-full mt-4">
-              {isLoading ? "Swarm is generating UI..." : "Generate Dashboard"}
+              {isLoading ? (generationStatus || "Swarm is generating UI...") : "Generate Dashboard"}
             </Button>
           </CardContent>
         </Card>
 
-        {(generatedCode !== null || isChatting) && (
+        {(generatedCode !== null || isChatting || isLoading) && (
           <div className="mt-8 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold text-slate-900">Generated Dashboard</h2>
@@ -254,6 +311,13 @@ export default function Dashboard() {
                 <Button onClick={() => window.open(deploymentUrl, '_blank')} className="bg-green-600 hover:bg-green-700 text-white gap-2">
                   View Live App <ExternalLink size={16} />
                 </Button>
+              </div>
+            )}
+
+            {isLoading && generationStatus && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-sm text-blue-700 flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                {generationStatus}
               </div>
             )}
 
