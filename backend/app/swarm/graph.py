@@ -22,11 +22,22 @@ redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 redis_client = AsyncRedis.from_url(redis_url)
 memory_saver = AsyncRedisSaver(redis_client=redis_client)
 
-ENABLE_EVAL_GATE = False 
+ENABLE_EVAL_GATE = True 
 
 def semantic_memory_node(state: GraphState):
-    """Queries Qdrant for past dashboards to inject as structural context."""
+    """
+    Queries Qdrant for past dashboards to inject as structural context —
+    but ONLY as a cold-start bootstrap for a thread that doesn't already
+    have a dashboard. 
+    """
     logger.info("--- SEARCHING SEMANTIC MEMORY ---")
+
+    if state.get("ui_code"):
+        logger.info(
+            "Thread already has a ui_code — skipping semantic memory "
+            "lookup to avoid overwriting the current dashboard."
+        )
+        return {}
 
     search_query = state.get("user_prompt")
 

@@ -3,6 +3,7 @@ from app.core.threading import build_thread_id
 from fastapi import UploadFile
 from app.swarm.graph import swarm_graph
 from app.models.user import User
+from app.core.llm import extract_text_content
 from loguru import logger
 
 async def execute_generation_swarm(session_id: str, file: UploadFile, current_user: User, uploaded_image_base64: str = None) -> dict:
@@ -71,7 +72,8 @@ async def stream_chat_swarm(session_id: str, prompt: str, current_user: User):
         node_name = event.get("metadata", {}).get("langgraph_node")
         
         if kind == "on_chat_model_stream" and node_name == "frontend_engineer":
-            chunk = event["data"]["chunk"].content
+            raw_chunk = event["data"]["chunk"].content
+            chunk = extract_text_content(raw_chunk)
             if chunk:
                 yield chunk
 
