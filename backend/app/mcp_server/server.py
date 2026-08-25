@@ -33,18 +33,20 @@ def create_vite_scaffold(target_dir: str, ui_code: str, dataset_json: str):
         ui_code = ui_code.split("\n", 1)[-1]  # Removes the first line (e.g., ```typescript)
     if ui_code.endswith("```"):
         ui_code = ui_code.rsplit("\n", 1)[0]  # Removes the last line (```)
-    
-    import_lines = []
-    other_lines = []
-    for line in ui_code.split('\n'):
-        if line.startswith('import '):
-            import_lines.append(line)
-        else:
-            other_lines.append(line)
-            
+
+    import_stmt_pattern = re.compile(r"import\s+[\s\S]*?from\s+['\"][^'\"]+['\"];?")
+    import_lines = import_stmt_pattern.findall(ui_code)
+    remaining_code = import_stmt_pattern.sub("", ui_code)
+
+    bare_import_pattern = re.compile(r"import\s+['\"][^'\"]+['\"];?")
+    import_lines += bare_import_pattern.findall(remaining_code)
+    remaining_code = bare_import_pattern.sub("", remaining_code)
+
+    other_lines = remaining_code.strip()
+
     dynamic_data = f"\nconst data = {dataset_json};\n"
-    
-    final_code = "\n".join(import_lines) + "\n" + dynamic_data + "\n".join(other_lines)
+
+    final_code = "\n".join(import_lines) + "\n" + dynamic_data + "\n" + other_lines
     
     app_tsx_path = os.path.join(target_dir, "src", "App.tsx")
     with open(app_tsx_path, "w") as f:
