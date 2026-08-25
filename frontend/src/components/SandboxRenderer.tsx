@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react"
+import React, { useState, useMemo, useEffect, useRef } from "react"
 import { LiveProvider, LiveError, LivePreview } from "react-live"
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -51,6 +51,8 @@ export default function SandboxRenderer({
   isStreaming?: boolean 
 }) {
   const [view, setView] = useState<"preview" | "code">("preview")
+  const codeContainerRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     if (isStreaming) {
       setView("code")
@@ -59,6 +61,12 @@ export default function SandboxRenderer({
       return () => clearTimeout(timer)
     }
   }, [isStreaming])
+
+  useEffect(() => {
+    if (codeContainerRef.current) {
+      codeContainerRef.current.scrollTop = codeContainerRef.current.scrollHeight
+    }
+  }, [codeString])
 
   const cleanCode = useMemo(() => {
     if (!codeString) return ""
@@ -80,6 +88,7 @@ export default function SandboxRenderer({
       componentName = inlineFnMatch[1]
       processed = processed.replace(/export\s+default\s+(?=function\s+\w+)/, "")
     } else {
+
       const refMatch = processed.match(/export\s+default\s+(\w+)\s*;?/)
       if (refMatch) {
         componentName = refMatch[1]
@@ -139,7 +148,7 @@ export default function SandboxRenderer({
             )}
           </div>
         ) : (
-          <div className="flex-1 bg-slate-900 p-6 max-h-[600px] overflow-y-auto">
+          <div ref={codeContainerRef} className="flex-1 bg-slate-900 p-6 max-h-[600px] overflow-y-auto">
             <pre className="text-slate-300 font-mono text-sm whitespace-pre-wrap">
               {codeString}
               {isStreaming && <span className="animate-pulse bg-blue-500 text-transparent">_</span>}
