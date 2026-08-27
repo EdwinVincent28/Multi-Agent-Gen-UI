@@ -21,6 +21,7 @@ def frontend_engineer_node(state: GraphState, config: RunnableConfig):
     clean_data = state.get("clean_data") or []
     columns = list(clean_data[0].keys()) if clean_data else []
     eval_feedback = state.get("eval_feedback", [])
+    is_live_data_source = state.get("data_source") == "twitch"
 
     raw_previous_code = state.get("ui_code") or "None provided."
     raw_user_prompt = state.get("user_prompt") or "None provided."
@@ -58,6 +59,16 @@ Blueprint JSON:
 {ui_blueprint}
 """
 
+    live_data_instruction = ""
+    if is_live_data_source and not is_edit_mode:
+        live_data_instruction = """
+LIVE DATA RULES: This dataset is NOT a static snapshot — it's a live, continuously growing feed (each row is a periodic snapshot of a live Twitch channel: viewer count, chat activity, top emote). The component you write will keep receiving a larger `data` array over time as new rows arrive, without being regenerated.
+1. Any list or table (e.g. recent activity, chat stats) MUST cap how many rows it actually renders — use the most recent N (e.g. the last 20) via array slicing, never render the entire array directly. An unbounded list will grow the DOM forever as live data accumulates.
+2. Any such list/table container MUST have a fixed max height with overflow-y-auto (as an inline style, per the layout rule above) so it scrolls internally instead of growing the page.
+3. Trend charts (e.g. viewer count over time) should also cap to a reasonable recent window (e.g. the last 30-50 points) rather than plotting every row ever received, so the chart stays readable as data accumulates.
+4. Do not assume a fixed final dataset size anywhere in your logic (e.g. don't hardcode array indices assuming N total rows) — the array length changes over time.
+"""
+
     feedback_str = "\n".join([f"- {item}" for item in eval_feedback]) if eval_feedback else "None."
 
     # previous_code still carries the full prior generated component in edit
@@ -82,6 +93,7 @@ ENVIRONMENT CONSTRAINTS:
 - Component Library: Shadcn UI + Lucide React icons.
 - CRITICAL: You must import icons from "lucide-react". NEVER use "lucide-react-native" or "react-icons".
 {blueprint_instruction}
+{live_data_instruction}
 
 CRITICAL SHADCN UI RULES (DO NOT HALLUCINATE):
 1. TABLES: The <TableHeader> tag MUST wrap the <TableRow>. The <TableHead> tag represents the individual cell.
@@ -158,7 +170,8 @@ If a USER PROMPT and PREVIOUS CODE are provided, you are in EDIT MODE. You must 
         "previous_code": previous_code_for_prompt,
         "user_prompt": raw_user_prompt,
         "feedback_str": feedback_str,
-        "blueprint_instruction": blueprint_instruction
+        "blueprint_instruction": blueprint_instruction,
+        "live_data_instruction": live_data_instruction
     })
 
     elapsed_time = time.time() - start_time

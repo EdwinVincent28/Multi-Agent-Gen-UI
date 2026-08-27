@@ -100,38 +100,21 @@ async def stream_chat_swarm(session_id: str, prompt: str, current_user: User):
         logger.info("==========================================\n")
 
 
-async def stream_generation_swarm(
-    session_id: str,
-    raw_data_string: str,
-    current_user: User,
-    uploaded_image_base64: str = None,
-):
+async def _stream_swarm_pipeline(initial_state: dict, thread_id: str, log_label: str):
     """
-    Streams the FULL first-generation pipeline (data_engineer -> analyst ->
-    semantic_memory -> vision_analyst -> frontend_engineer -> evaluator ->
-    possible retries), yielding structured dict events:
+    Shared core for streaming a full swarm pipeline run to completion,
+    yielding structured dict events along the way:
 
-      {"type": "status", "node": "vision_analyst", "message": "..."}
+      {"type": "status", "node": "...", "message": "..."}
       {"type": "code_chunk", "content": "..."}
       {"type": "final", "insights": ..., "ui_code": ..., "data": ...}
       {"type": "error", "message": "..."}
 
+    Used by both stream_generation_swarm (CSV upload) and
+    stream_twitch_swarm (live Twitch data) — the only difference between
+    them is how initial_state gets built before reaching this function.
     """
-    logger.info(f"--- STREAMING GENERATION FOR SESSION: {session_id} ---")
-
-    initial_state = {
-        "raw_data": raw_data_string,
-        "clean_data": None,
-        "insights": None,
-        "ui_code": None,
-        "errors": None,
-        "uploaded_image_base64": uploaded_image_base64,
-        "eval_feedback": []
-    }
-
-    thread_id = build_thread_id(current_user.id, session_id)
     config = {"configurable": {"thread_id": thread_id}}
-
     final_state = None
 
     announced_nodes = set()
@@ -161,7 +144,7 @@ async def stream_generation_swarm(
                     final_state = output
 
     except Exception as e:
-        logger.error(f"Stream generation error: {e}")
+        logger.error(f"{log_label} error: {e}")
         yield {"type": "error", "message": str(e)}
         return
 
@@ -173,7 +156,7 @@ async def stream_generation_swarm(
         yield {"type": "error", "message": str(final_state["errors"])}
         return
 
-    logger.info("\n=== END-TO-END TELEMETRY (STREAM GENERATION) ===")
+    logger.info(f"\n=== END-TO-END TELEMETRY ({log_label}) ===")
     logger.info(json.dumps(final_state.get("telemetry", {}), indent=2))
     if final_state.get("retry_count"):
         logger.info(f"Retries triggered: {final_state['retry_count']}")
@@ -185,3 +168,58 @@ async def stream_generation_swarm(
         "ui_code": final_state.get("ui_code"),
         "data": final_state.get("clean_data"),
     }
+
+
+async def stream_generation_swarm(
+    session_id: str,
+    raw_data_string: str,
+    current_user: User,
+    uploaded_image_base64: str = None,
+):
+    """Streams the full first-generation pipeline for an uploaded CSV."""
+    logger.info(f"--- STREAMING GENERATION FOR SESSION: {session_id} ---")
+
+    initial_state = {
+        "raw_data": raw_data_string,
+        "clean_data": None,
+        "insights": None,
+        "ui_code": None,
+        "errors": None,
+        "uploaded_image_base64": uploaded_image_base64,
+        "eval_feedback": [],
+        "data_source": "csv",
+    }
+
+    thread_id = build_thread_id(current_user.id, session_id)
+
+    async for message in _stream_swarm_pipeline(initial_state, thread_id, "STREAM GENERATION"):
+        yield message
+
+
+async def stream_twitch_swarm(
+    session_id: str,
+    initial_clean_data: list[dict],
+    current_user: User,
+    uploaded_image_base64: str = None,
+):
+    """
+    Streams the full first-generation pipeline seeded with Twitch data
+    instead of a parsed CSV. 
+    """
+    logger.info(f"--- STREAMING TWITCH GENERATION FOR SESSION: {session_id} ---")
+
+    initial_state = {
+        "raw_data": None,
+        "clean_data": initial_clean_data,
+        "insights": None,
+        "ui_code": None,
+        "errors": None,
+        "uploaded_image_base64": uploaded_image_base64,
+        "eval_feedback": [],
+        "data_source": "twitch",
+    }
+
+    thread_id = build_thread_id(current_user.id, session_id)
+
+    async for message in _stream_swarm_pipeline(initial_state, thread_id, "STREAM TWITCH GENERATION"):
+        yield message

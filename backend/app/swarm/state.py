@@ -1,4 +1,4 @@
-from typing import TypedDict, Optional, Any
+from typing import TypedDict, Optional, Any, Literal
 
 class GraphState(TypedDict):
     """
@@ -16,3 +16,4 @@ class GraphState(TypedDict):
     telemetry: Optional[dict[str, Any]]
     uploaded_image_base64: Optional[str]
     ui_blueprint: Optional[str]
+    data_source: Optional[Literal["csv", "twitch"]]

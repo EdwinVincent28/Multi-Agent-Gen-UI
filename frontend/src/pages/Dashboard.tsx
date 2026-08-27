@@ -3,12 +3,12 @@ import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Activity, LogOut, Cloud, ExternalLink, Image as ImageIcon } from "lucide-react"
+import { Activity, LogOut, Cloud, ExternalLink, Image as ImageIcon, Radio } from "lucide-react"
 
 import SandboxRenderer from "@/components/SandboxRenderer"
 
-// Reads a File as plain text. Used for the CSV, which now travels over the
-// WebSocket as a JSON string field instead of multipart/FormData 
+// Reads a File as plain text. Used for the CSV, which travels over the
+// WebSocket as a JSON string field instead of multipart/FormData.
 function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -18,10 +18,16 @@ function readFileAsText(file: File): Promise<string> {
   })
 }
 
+type DataSourceMode = "csv" | "twitch"
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const [file, setFile] = useState<File | null>(null)
-  
+
+  const [dataSourceMode, setDataSourceMode] = useState<DataSourceMode>("csv")
+  const [twitchChannel, setTwitchChannel] = useState("")
+  const [isLiveConnected, setIsLiveConnected] = useState(false)
+
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   
@@ -140,6 +146,83 @@ export default function Dashboard() {
     }
   }
 
+  const handleConnectTwitch = () => {
+    const token = localStorage.getItem("jwt_token")
+    if (!twitchChannel.trim() || !token) return
+
+    setIsLoading(true)
+    setGenerationStatus("Connecting to Twitch...")
+    setGeneratedCode("")
+    setDataset(null)
+    setDeploymentUrl(null)
+    setIsLiveConnected(false)
+
+    const ws = new WebSocket(`ws://127.0.0.1:8000/api/v1/ws/twitch/${sessionId}`)
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({
+        token: token,
+        channel: twitchChannel.trim(),
+        uploaded_image_base64: imageBase64 || undefined,
+      }))
+    }
+
+    ws.onmessage = (event) => {
+      let message: any
+      try {
+        message = JSON.parse(event.data)
+      } catch {
+        console.error("Received non-JSON message from /ws/twitch:", event.data)
+        return
+      }
+
+      switch (message.type) {
+        case "status":
+          setGenerationStatus(message.message)
+          break
+
+        case "code_chunk":
+          setGeneratedCode((prev) => (prev || "") + message.content)
+          break
+
+        case "final":
+          if (message.ui_code) {
+            setGeneratedCode(message.ui_code)
+          }
+          setDataset(message.data ?? null)
+          setGenerationStatus(null)
+          setIsLoading(false)
+          setIsLiveConnected(true)
+          break
+
+        case "data_update":
+          setDataset(message.data ?? null)
+          break
+
+        case "error":
+          console.error("Twitch generation error:", message.message)
+          setGenerationStatus(null)
+          setIsLoading(false)
+          break
+
+        default:
+          console.warn("Unknown message type from /ws/twitch:", message)
+      }
+    }
+
+    ws.onerror = (error) => {
+      console.error("Twitch WebSocket Error:", error)
+      setIsLoading(false)
+      setIsLiveConnected(false)
+      setGenerationStatus(null)
+    }
+
+    ws.onclose = () => {
+      setIsLoading(false)
+      setIsLiveConnected(false)
+    }
+  }
+
   const handleChat = (e: React.FormEvent) => {
     e.preventDefault()
     const token = localStorage.getItem("jwt_token")
@@ -254,33 +337,110 @@ export default function Dashboard() {
             <CardTitle className="flex items-center gap-2">
               <Activity className="text-blue-500" /> Data Ingestion Engine
             </CardTitle>
-            <CardDescription>Upload a CSV and an optional wireframe to trigger the LangGraph swarm.</CardDescription>
+            <CardDescription>Upload a CSV, or connect to a live Twitch channel, to trigger the LangGraph swarm.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">1. Upload Dataset (CSV)</label>
-                <Input type="file" accept=".csv,.json" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">
-                   2. Upload Wireframe (Optional)
-                </label>
-                <Input type="file" accept="image/*" onChange={handleImageUpload} />
-              </div>
+
+            {/* Mode toggle */}
+            <div className="flex gap-2 p-1 bg-slate-100 rounded-lg w-fit">
+              <button
+                onClick={() => setDataSourceMode("csv")}
+                disabled={isLoading}
+                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  dataSourceMode === "csv"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Upload CSV
+              </button>
+              <button
+                onClick={() => setDataSourceMode("twitch")}
+                disabled={isLoading}
+                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center gap-1.5 ${
+                  dataSourceMode === "twitch"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                <Radio size={14} /> Live Twitch Channel
+              </button>
             </div>
 
-            {imagePreview && (
-              <div className="mt-4 border border-slate-200 rounded-lg p-2 bg-white inline-block">
-                <p className="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wider">Wireframe Preview</p>
-                <img src={imagePreview} alt="Wireframe" className="h-32 w-auto rounded object-contain" />
-              </div>
-            )}
+            {dataSourceMode === "csv" ? (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">1. Upload Dataset (CSV)</label>
+                    <Input type="file" accept=".csv,.json" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">
+                      2. Upload Wireframe (Optional)
+                    </label>
+                    <Input type="file" accept="image/*" onChange={handleImageUpload} />
+                  </div>
+                </div>
 
-            <Button onClick={handleGenerate} disabled={!file || isLoading} className="w-full mt-4">
-              {isLoading ? (generationStatus || "Swarm is generating UI...") : "Generate Dashboard"}
-            </Button>
+                {imagePreview && (
+                  <div className="mt-4 border border-slate-200 rounded-lg p-2 bg-white inline-block">
+                    <p className="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wider">Wireframe Preview</p>
+                    <img src={imagePreview} alt="Wireframe" className="h-32 w-auto rounded object-contain" />
+                  </div>
+                )}
+
+                <Button onClick={handleGenerate} disabled={!file || isLoading} className="w-full mt-4">
+                  {isLoading ? (generationStatus || "Swarm is generating UI...") : "Generate Dashboard"}
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Twitch Channel Name</label>
+                  <Input
+                    type="text"
+                    placeholder="e.g. tarik"
+                    value={twitchChannel}
+                    onChange={(e) => setTwitchChannel(e.target.value)}
+                    disabled={isLoading || isLiveConnected}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700 flex items-center gap-1">
+                    <ImageIcon size={14} /> Upload Wireframe (Optional)
+                  </label>
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    disabled={isLoading || isLiveConnected}
+                  />
+                </div>
+
+                {imagePreview && (
+                  <div className="mt-2 border border-slate-200 rounded-lg p-2 bg-white inline-block">
+                    <p className="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wider">Wireframe Preview</p>
+                    <img src={imagePreview} alt="Wireframe" className="h-32 w-auto rounded object-contain" />
+                  </div>
+                )}
+
+                {isLiveConnected && (
+                  <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5 w-fit">
+                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    Live — connected to #{twitchChannel}
+                  </div>
+                )}
+
+                <Button
+                  onClick={handleConnectTwitch}
+                  disabled={!twitchChannel.trim() || isLoading || isLiveConnected}
+                  className="w-full mt-4"
+                >
+                  {isLoading ? (generationStatus || "Connecting...") : isLiveConnected ? "Connected" : "Connect & Generate Dashboard"}
+                </Button>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -314,6 +474,7 @@ export default function Dashboard() {
               </div>
             )}
 
+            {/* Live status banner during first generation */}
             {isLoading && generationStatus && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-sm text-blue-700 flex items-center gap-2">
                 <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse" />

@@ -15,10 +15,14 @@ class TwitchAuthError(Exception):
     """Raised when Twitch authentication fails or required config is missing."""
 
 
+class TwitchAPIError(Exception):
+    """Raised when a Twitch Helix API call fails (distinct from auth failures)."""
+
+
 @dataclass
 class _CachedToken:
     access_token: str
-    expires_at: float 
+    expires_at: float  # unix timestamp
 
 
 class TwitchAuthClient:
@@ -101,3 +105,50 @@ class TwitchAuthClient:
         return access_token
 
 twitch_auth = TwitchAuthClient()
+
+
+HELIX_STREAMS_URL = "https://api.twitch.tv/helix/streams"
+
+
+async def get_stream_info(channel: str) -> dict:
+    """
+    Fetches minimal live info for a channel: whether it's currently live,
+    and its current viewer count.
+    """
+    client_id = os.getenv("TWITCH_CLIENT_ID")
+    if not client_id:
+        raise TwitchAuthError(
+            "TWITCH_CLIENT_ID must be set. Register an app at "
+            "https://dev.twitch.tv/console/apps to get one."
+        )
+
+    token = await twitch_auth.get_access_token()
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(
+                HELIX_STREAMS_URL,
+                params={"user_login": channel.lower()},
+
+                headers={
+                    "Client-Id": client_id,
+                    "Authorization": f"Bearer {token}",
+                },
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise TwitchAPIError(
+                f"Twitch Get Streams request failed with status "
+                f"{e.response.status_code}: {e.response.text}"
+            ) from e
+        except httpx.RequestError as e:
+            raise TwitchAPIError(f"Twitch Get Streams request failed: {e}") from e
+
+    payload = response.json()
+    streams = payload.get("data", [])
+
+    if not streams:
+        return {"is_live": False, "viewer_count": 0}
+
+    stream = streams[0]
+    return {"is_live": True, "viewer_count": stream.get("viewer_count", 0)}

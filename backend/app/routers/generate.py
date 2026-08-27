@@ -1,9 +1,17 @@
+import asyncio
 from fastapi import APIRouter, HTTPException, Depends, File, Form, UploadFile, WebSocket, WebSocketDisconnect
 from typing import Optional
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.schemas import GenerationResponse, ChatRequest
-from app.services.swarm_service import execute_generation_swarm, execute_chat_swarm, stream_chat_swarm, stream_generation_swarm
+from app.services.swarm_service import (
+    execute_generation_swarm,
+    execute_chat_swarm,
+    stream_chat_swarm,
+    stream_generation_swarm,
+    stream_twitch_swarm,
+)
+from app.services.twitch_session import TwitchLiveSession
 import json
 from app.core.security import SECRET_KEY, ALGORITHM
 import jwt
@@ -102,9 +110,8 @@ async def websocket_generate_endpoint(
 ):
     """
     Streams the full first-generation pipeline: status updates as each
-    agent node starts (data parsing, analysis, wireframe examination,
-    code writing, review), plus token-by-token code streaming during the
-    frontend_engineer step
+    agent node starts, plus token-by-token code streaming during the
+    frontend_engineer step.
     """
     await websocket.accept()
 
@@ -146,6 +153,90 @@ async def websocket_generate_endpoint(
         logger.error(f"WebSocket Error: {e}")
         await websocket.send_json({"type": "error", "message": repr(e)})
         await websocket.close(code=1011)
+
+
+@router.websocket("/ws/twitch/{session_id}")
+async def websocket_twitch_endpoint(
+    websocket: WebSocket,
+    session_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Connects to a live Twitch channel, generates an initial dashboard from
+    a first data snapshot, then keeps pushing updated snapshots as the
+    live session continues.
+
+    Two phases over one connection:
+      1. Same message protocol as /ws/generate (status/code_chunk/final)
+         while the initial dashboard is being generated.
+      2. Once generation succeeds, {"type": "data_update", "data": [...]}
+         messages are pushed whenever new snapshot rows accumulate, until
+         the client disconnects.
+    """
+    await websocket.accept()
+
+    session: TwitchLiveSession | None = None
+
+    try:
+        data = await websocket.receive_json()
+        token = data.get("token")
+        channel = data.get("channel")
+        uploaded_image_base64 = data.get("uploaded_image_base64")
+
+        if not token or not channel:
+            await websocket.send_json({"type": "error", "message": "Missing token or channel"})
+            await websocket.close(code=1008)
+            return
+
+        try:
+            current_user = _authenticate_ws_token(token, db)
+        except jwt.ExpiredSignatureError:
+            await websocket.send_json({"type": "error", "message": "Token expired"})
+            await websocket.close(code=1008)
+            return
+        except Exception as e:
+            await websocket.send_json({"type": "error", "message": f"Error validating token: {str(e)}"})
+            await websocket.close(code=1008)
+            return
+
+        session = TwitchLiveSession(channel=channel)
+        initial_row = await session.take_snapshot_now()
+
+        generation_succeeded = False
+        async for message in stream_twitch_swarm(session_id, [initial_row], current_user, uploaded_image_base64):
+            await websocket.send_json(message)
+            if message.get("type") == "final":
+                generation_succeeded = True
+
+        if not generation_succeeded:
+            await websocket.close(code=1011)
+            return
+
+        await session.start()
+
+        last_sent_count = len(session.rows)
+        while True:
+            await asyncio.sleep(session.snapshot_interval_seconds)
+            current_rows = session.rows
+            if len(current_rows) != last_sent_count:
+                await websocket.send_json({"type": "data_update", "data": current_rows})
+                last_sent_count = len(current_rows)
+
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected gracefully for Twitch session {session_id}")
+    except Exception as e:
+        import traceback
+        logger.error("\n--- FULL WEBSOCKET TRACEBACK (TWITCH) ---")
+        traceback.print_exc()
+        logger.error(f"WebSocket Error: {e}")
+        try:
+            await websocket.send_json({"type": "error", "message": repr(e)})
+            await websocket.close(code=1011)
+        except Exception:
+            pass
+    finally:
+        if session is not None:
+            await session.stop()
 
 
 @router.websocket("/ws/chat/{session_id}")

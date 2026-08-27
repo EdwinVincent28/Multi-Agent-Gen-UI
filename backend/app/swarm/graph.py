@@ -26,9 +26,7 @@ ENABLE_EVAL_GATE = True
 
 def semantic_memory_node(state: GraphState):
     """
-    Queries Qdrant for past dashboards to inject as structural context —
-    but ONLY as a cold-start bootstrap for a thread that doesn't already
-    have a dashboard. 
+    Queries Qdrant for past dashboards to inject as structural context
     """
     logger.info("--- SEARCHING SEMANTIC MEMORY ---")
 
@@ -63,6 +61,8 @@ def build_graph():
             
         if state.get("user_prompt"):
             return "semantic_memory"
+        if state.get("clean_data"):
+            return "analyst"
         return "data_engineer"
 
     workflow = StateGraph(GraphState)
@@ -79,6 +79,7 @@ def build_graph():
         entry_router,
         {
             "semantic_memory": "semantic_memory",
+            "analyst": "analyst",
             "data_engineer": "data_engineer"
         }
     )
