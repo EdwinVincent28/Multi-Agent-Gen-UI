@@ -14,8 +14,6 @@ from app.swarm.agents.devops_agent import devops_agent_node
 from app.swarm.agents.evaluator import evaluator_node 
 from app.swarm.agents.vision_analyst import vision_analyst_node
 
-from app.services.memory_service import retrieve_similar_dashboard
-
 load_dotenv()
 
 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -24,28 +22,6 @@ memory_saver = AsyncRedisSaver(redis_client=redis_client)
 
 ENABLE_EVAL_GATE = True 
 
-def semantic_memory_node(state: GraphState):
-    """
-    Queries Qdrant for past dashboards to inject as structural context
-    """
-    logger.info("--- SEARCHING SEMANTIC MEMORY ---")
-
-    if state.get("ui_code"):
-        logger.info(
-            "Thread already has a ui_code — skipping semantic memory "
-            "lookup to avoid overwriting the current dashboard."
-        )
-        return {}
-
-    search_query = state.get("user_prompt")
-
-    if search_query:
-        past_ui_code = retrieve_similar_dashboard(str(search_query))
-        
-        if past_ui_code:
-            return {"ui_code": past_ui_code}
-            
-    return {}
 
 def build_graph():
     def entry_router(state: GraphState):
@@ -60,7 +36,7 @@ def build_graph():
             }
             
         if state.get("user_prompt"):
-            return "semantic_memory"
+            return "vision_analyst"
         if state.get("clean_data"):
             return "analyst"
         return "data_engineer"
@@ -69,7 +45,6 @@ def build_graph():
 
     workflow.add_node("data_engineer", data_engineer_node)
     workflow.add_node("analyst", analyst_node)
-    workflow.add_node("semantic_memory", semantic_memory_node)
     workflow.add_node("vision_analyst", vision_analyst_node)
     workflow.add_node("frontend_engineer", frontend_engineer_node)
     workflow.add_node("devops_agent", devops_agent_node)
@@ -78,7 +53,7 @@ def build_graph():
     workflow.set_conditional_entry_point(
         entry_router,
         {
-            "semantic_memory": "semantic_memory",
+            "vision_analyst": "vision_analyst",
             "analyst": "analyst",
             "data_engineer": "data_engineer"
         }
@@ -95,8 +70,7 @@ def build_graph():
         {"analyst": "analyst", "end": END}
     )
 
-    workflow.add_edge("analyst", "semantic_memory")
-    workflow.add_edge("semantic_memory", "vision_analyst") 
+    workflow.add_edge("analyst", "vision_analyst")
     workflow.add_edge("vision_analyst", "frontend_engineer")
     
     def route_after_frontend(state: GraphState):

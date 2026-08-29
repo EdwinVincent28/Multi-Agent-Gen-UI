@@ -12,6 +12,8 @@ from app.services.swarm_service import (
     stream_twitch_swarm,
 )
 from app.services.twitch_session import TwitchLiveSession
+from app.services.twitch_qa_service import answer_twitch_question
+from pydantic import BaseModel
 import json
 from app.core.security import SECRET_KEY, ALGORITHM
 import jwt
@@ -86,6 +88,27 @@ async def chat_with_dashboard(
     except Exception as e:
         logger.error(f"Chat Endpoint Error: {e}")
         raise HTTPException(status_code=500, detail="An error occurred while updating the dashboard.")
+
+class TwitchQuestionRequest(BaseModel):
+    session_id: str
+    question: str
+
+
+@router.post("/twitch/ask")
+async def ask_twitch_dashboard(
+    request: TwitchQuestionRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Answers a question about a live Twitch session using RAG over
+    indexed stats + chat context, scoped to that one session only.
+    """
+    try:
+        result = await answer_twitch_question(request.session_id, request.question)
+        return result
+    except Exception as e:
+        logger.error(f"Twitch Q&A Error: {e}")
+        raise HTTPException(status_code=500, detail="An error occurred while answering the question.")
 
 
 def _authenticate_ws_token(token: str, db: Session) -> User:
@@ -199,7 +222,7 @@ async def websocket_twitch_endpoint(
             await websocket.close(code=1008)
             return
 
-        session = TwitchLiveSession(channel=channel)
+        session = TwitchLiveSession(channel=channel, session_id=session_id)
         initial_row = await session.take_snapshot_now()
 
         generation_succeeded = False
@@ -233,7 +256,7 @@ async def websocket_twitch_endpoint(
             await websocket.send_json({"type": "error", "message": repr(e)})
             await websocket.close(code=1011)
         except Exception:
-            pass
+            pass  # connection may already be closed by this point
     finally:
         if session is not None:
             await session.stop()

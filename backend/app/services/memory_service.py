@@ -1,7 +1,8 @@
 import os
+import uuid
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct
+from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
 from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
 from loguru import logger
 
@@ -9,54 +10,102 @@ load_dotenv()
 
 qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
 client = QdrantClient(url=qdrant_url)
-collection_name = "dashboard_memory"
 
 embeddings = FastEmbedEmbeddings()
 
+EMBEDDING_SIZE = 384
+
+TWITCH_COLLECTION = "twitch_live_context"
+
+
 def initialize_qdrant():
-    """Ensure the collection exists before we try to use it."""
-    if not client.collection_exists(collection_name):
+    """Ensure the Twitch RAG collection exists before we try to use it."""
+    if not client.collection_exists(TWITCH_COLLECTION):
         client.create_collection(
-            collection_name=collection_name,
-            vectors_config=VectorParams(size=384, distance=Distance.COSINE),
+            collection_name=TWITCH_COLLECTION,
+            vectors_config=VectorParams(size=EMBEDDING_SIZE, distance=Distance.COSINE),
         )
 
 initialize_qdrant()
 
-def save_dashboard_to_memory(session_id: str, insights: str, ui_code: str):
-    """Embeds the insights and saves the generated code to Qdrant."""
-    vector = embeddings.embed_query(insights)
-    
-    client.upsert(
-        collection_name=collection_name,
-        points=[
-            PointStruct(
-                id=session_id, 
-                vector=vector,
-                payload={"ui_code": ui_code, "insights": insights}
-            )
-        ]
-    )
-    logger.info(f"--- DASHBOARD {session_id} SAVED TO DOCKERIZED SEMANTIC MEMORY ---")
 
-def retrieve_similar_dashboard(user_prompt: str) -> str | None:
-    """Finds a previously generated dashboard similar to the current prompt."""
-    query_vector = embeddings.embed_query(user_prompt)
-    
-    response = client.query_points(
-        collection_name=collection_name,
-        query=query_vector,
-        limit=1 
+def store_twitch_context_batch(
+    session_id: str,
+    channel: str,
+    window_start: float,
+    window_end: float,
+    stats_text: str,
+    chat_text: str = None,
+):
+    """
+    Embeds and stores one time-windowed batch of Twitch context for a
+    live session
+    """
+    points = []
+
+    stats_vector = embeddings.embed_query(stats_text)
+    points.append(
+        PointStruct(
+            id=str(uuid.uuid4()),
+            vector=stats_vector,
+            payload={
+                "session_id": session_id,
+                "channel": channel,
+                "type": "stats",
+                "window_start": window_start,
+                "window_end": window_end,
+                "text": stats_text,
+            },
+        )
     )
-    
-    hits = response.points
-    
-    if hits:
-        best_match = hits[0]
-        logger.info(f"--- QDRANT MATCH SCORE: {best_match.score} ---")
-        
-        if best_match.score > 0.40: 
-            logger.info(f"--- RETRIEVED RELEVANT UI FROM DOCKERIZED SEMANTIC MEMORY ---")
-            return best_match.payload.get("ui_code")
-            
-    return None
+
+    if chat_text:
+        chat_vector = embeddings.embed_query(chat_text)
+        points.append(
+            PointStruct(
+                id=str(uuid.uuid4()),
+                vector=chat_vector,
+                payload={
+                    "session_id": session_id,
+                    "channel": channel,
+                    "type": "chat",
+                    "window_start": window_start,
+                    "window_end": window_end,
+                    "text": chat_text,
+                },
+            )
+        )
+
+    client.upsert(collection_name=TWITCH_COLLECTION, points=points)
+    logger.info(
+        f"--- STORED TWITCH CONTEXT BATCH for session {session_id} "
+        f"({len(points)} point(s), window {window_start:.0f}-{window_end:.0f}) ---"
+    )
+
+
+def retrieve_twitch_context(session_id: str, question: str, limit: int = 5) -> list[dict]:
+    """
+    Retrieves the most relevant stored context batches for a question,
+    scoped to ONE session only via a Qdrant filter
+    """
+    query_vector = embeddings.embed_query(question)
+
+    response = client.query_points(
+        collection_name=TWITCH_COLLECTION,
+        query=query_vector,
+        query_filter=Filter(
+            must=[FieldCondition(key="session_id", match=MatchValue(value=session_id))]
+        ),
+        limit=limit,
+    )
+
+    return [
+        {
+            "type": hit.payload.get("type"),
+            "window_start": hit.payload.get("window_start"),
+            "window_end": hit.payload.get("window_end"),
+            "text": hit.payload.get("text"),
+            "score": hit.score,
+        }
+        for hit in response.points
+    ]

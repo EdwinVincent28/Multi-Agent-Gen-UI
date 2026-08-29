@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Activity, LogOut, Cloud, ExternalLink, Image as ImageIcon, Radio } from "lucide-react"
+import { Activity, LogOut, Cloud, ExternalLink, Image as ImageIcon, Radio, MessageCircle } from "lucide-react"
 
 import SandboxRenderer from "@/components/SandboxRenderer"
 
@@ -40,6 +40,12 @@ export default function Dashboard() {
 
   const [chatInput, setChatInput] = useState("")
   const [isChatting, setIsChatting] = useState(false)
+
+  const [twitchQuestionInput, setTwitchQuestionInput] = useState("")
+  const [isAskingTwitchQuestion, setIsAskingTwitchQuestion] = useState(false)
+  const [twitchQaHistory, setTwitchQaHistory] = useState<
+    { question: string; answer: string; hasContext: boolean }[]
+  >([])
 
   const [isDeploying, setIsDeploying] = useState(false)
   const [deploymentUrl, setDeploymentUrl] = useState<string | null>(null)
@@ -146,6 +152,12 @@ export default function Dashboard() {
     }
   }
 
+  // Twitch mode's counterpart to handleGenerate. Shares the same message
+  // protocol (status/code_chunk/final) for the initial generation phase,
+  // but — unlike /ws/generate — the connection stays open afterward and
+  // keeps receiving "data_update" messages as the live session continues.
+  // There's no "<END_OF_STREAM>" sentinel here, since the whole point is
+  // that the stream doesn't end until the user navigates away.
   const handleConnectTwitch = () => {
     const token = localStorage.getItem("jwt_token")
     if (!twitchChannel.trim() || !token) return
@@ -196,6 +208,9 @@ export default function Dashboard() {
           break
 
         case "data_update":
+          // Ongoing live updates, arriving after "final" — the dashboard
+          // component itself re-renders off this prop change, no new
+          // code generation involved.
           setDataset(message.data ?? null)
           break
 
@@ -266,6 +281,50 @@ export default function Dashboard() {
 
     ws.onclose = () => {
       setIsChatting(false)
+    }
+  }
+
+  // Ask-your-dashboard Q&A (Twitch mode only, RAG over indexed live
+  // session context). A plain REST call, unlike generation/chat — a
+  // single retrieve-then-answer request has no meaningful streaming
+  // stages to show progress for.
+  const handleAskTwitchQuestion = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const token = localStorage.getItem("jwt_token")
+    const question = twitchQuestionInput.trim()
+    if (!question || !token) return
+
+    setIsAskingTwitchQuestion(true)
+    setTwitchQuestionInput("")
+
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/v1/twitch/ask", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ session_id: sessionId, question }),
+      })
+
+      if (res.status === 401) {
+        handleLogout()
+        return
+      }
+
+      const data = await res.json()
+      setTwitchQaHistory((prev) => [
+        ...prev,
+        { question, answer: data.answer, hasContext: data.has_context },
+      ])
+    } catch (error) {
+      console.error("Twitch Q&A request failed:", error)
+      setTwitchQaHistory((prev) => [
+        ...prev,
+        { question, answer: "Something went wrong answering that — please try again.", hasContext: false },
+      ])
+    } finally {
+      setIsAskingTwitchQuestion(false)
     }
   }
 
@@ -375,8 +434,8 @@ export default function Dashboard() {
                     <Input type="file" accept=".csv,.json" onChange={(e) => setFile(e.target.files?.[0] || null)} />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-700">
-                      2. Upload Wireframe (Optional)
+                    <label className="text-sm font-medium text-slate-700 flex items-center gap-1">
+                      <ImageIcon size={14} /> 2. Upload Wireframe (Optional)
                     </label>
                     <Input type="file" accept="image/*" onChange={handleImageUpload} />
                   </div>
@@ -474,7 +533,9 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Live status banner during first generation */}
+            {/* Live status banner during first generation — separate from
+                the code stream itself, since these steps happen before
+                frontend_engineer writes any code. */}
             {isLoading && generationStatus && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-sm text-blue-700 flex items-center gap-2">
                 <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
@@ -510,6 +571,50 @@ export default function Dashboard() {
                 </form>
               </CardContent>
             </Card>
+
+            {/* Twitch mode only — the RAG backend only has indexed
+                context for live Twitch sessions, so showing this for a
+                CSV dashboard would just hit the "not enough data" case
+                every time, which isn't useful. */}
+            {dataSourceMode === "twitch" && (
+              <Card className="mt-4 border-purple-200 bg-purple-50/50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg text-purple-800 flex items-center gap-2">
+                    <MessageCircle size={18} /> Ask Your Dashboard
+                  </CardTitle>
+                  <CardDescription className="text-purple-600">
+                    Ask about what's happened in the stream so far (e.g., "why did viewers spike earlier?")
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {twitchQaHistory.length > 0 && (
+                    <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                      {twitchQaHistory.map((entry, i) => (
+                        <div key={i} className="text-sm space-y-1">
+                          <p className="font-medium text-slate-800">{entry.question}</p>
+                          <p className={entry.hasContext ? "text-slate-600" : "text-slate-400 italic"}>
+                            {entry.answer}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleAskTwitchQuestion} className="flex gap-2">
+                    <Input
+                      value={twitchQuestionInput}
+                      onChange={(e) => setTwitchQuestionInput(e.target.value)}
+                      placeholder="Ask a question about the stream..."
+                      disabled={isAskingTwitchQuestion}
+                      className="bg-white"
+                    />
+                    <Button type="submit" disabled={isAskingTwitchQuestion || !twitchQuestionInput.trim()}>
+                      {isAskingTwitchQuestion ? "Thinking..." : "Ask"}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
       </div>

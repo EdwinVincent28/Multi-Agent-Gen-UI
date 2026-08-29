@@ -5,7 +5,6 @@ from langchain_core.runnables.config import RunnableConfig
 from app.core.llm import get_llm, extract_text_content
 from app.core.telemetry import record_node_telemetry, extract_tokens_used
 from app.swarm.state import GraphState
-from app.services.memory_service import save_dashboard_to_memory
 from loguru import logger
 
 def frontend_engineer_node(state: GraphState, config: RunnableConfig):
@@ -188,16 +187,6 @@ If a USER PROMPT and PREVIOUS CODE are provided, you are in EDIT MODE. You must 
         ui_code = code_blocks[-1].strip()
     else:
         ui_code = raw_content.strip()
-
-    thread_id = config.get("configurable", {}).get("thread_id")
-    session_id = thread_id.split("_")[-1] if thread_id else None
-    
-    if session_id and ui_code:
-        save_dashboard_to_memory(
-            session_id=session_id,
-            insights=str(state.get("insights", "")),
-            ui_code=ui_code
-        )
 
     pre_update_telemetry = state.get("telemetry", {}) or {}
     is_first_pass = (state.get("retry_count", 0) == 0 and "baseline_latency" not in pre_update_telemetry)
