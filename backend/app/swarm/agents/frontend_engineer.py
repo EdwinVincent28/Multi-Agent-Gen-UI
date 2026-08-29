@@ -3,6 +3,7 @@ import time
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables.config import RunnableConfig
 from app.core.llm import get_llm, extract_text_content
+from app.core.telemetry import record_node_telemetry, extract_tokens_used
 from app.swarm.state import GraphState
 from app.services.memory_service import save_dashboard_to_memory
 from loguru import logger
@@ -71,10 +72,7 @@ LIVE DATA RULES: This dataset is NOT a static snapshot — it's a live, continuo
 
     feedback_str = "\n".join([f"- {item}" for item in eval_feedback]) if eval_feedback else "None."
 
-    # previous_code still carries the full prior generated component in edit
-    # mode — this one we keep, since edit mode genuinely needs it. Cap it
-    # defensively so one oversized component can't blow the limit alone.
-    MAX_PREV_CODE_CHARS = 14000  # ~3.5k tokens, rough estimate — leaves headroom for system prompt + edit request
+    MAX_PREV_CODE_CHARS = 14000
     if len(raw_previous_code) > MAX_PREV_CODE_CHARS:
         previous_code_for_prompt = (
             raw_previous_code[:MAX_PREV_CODE_CHARS]
@@ -175,12 +173,7 @@ If a USER PROMPT and PREVIOUS CODE are provided, you are in EDIT MODE. You must 
     })
 
     elapsed_time = time.time() - start_time
-    
-    tokens_used = 0
-    if hasattr(response, "usage_metadata") and response.usage_metadata:
-        tokens_used = response.usage_metadata.get("total_tokens", 0)
-    elif hasattr(response, "response_metadata") and "token_usage" in response.response_metadata:
-        tokens_used = response.response_metadata["token_usage"].get("total_tokens", 0)
+    tokens_used = extract_tokens_used(response)
 
     raw_content = extract_text_content(response.content)
 
@@ -206,15 +199,14 @@ If a USER PROMPT and PREVIOUS CODE are provided, you are in EDIT MODE. You must 
             ui_code=ui_code
         )
 
-    telemetry = dict(state.get("telemetry", {}))
-    is_first_pass = (state.get("retry_count", 0) == 0 and "baseline_latency" not in telemetry)
+    pre_update_telemetry = state.get("telemetry", {}) or {}
+    is_first_pass = (state.get("retry_count", 0) == 0 and "baseline_latency" not in pre_update_telemetry)
+
+    telemetry = record_node_telemetry(pre_update_telemetry, "frontend_engineer", elapsed_time, tokens_used, response_text=ui_code)
 
     if is_first_pass:
-        telemetry["baseline_latency"] = round(telemetry.get("total_latency", 0.0) + elapsed_time, 2)
-        telemetry["baseline_tokens"] = telemetry.get("total_tokens", 0) + tokens_used
-
-    telemetry["total_latency"] = round(telemetry.get("total_latency", 0.0) + elapsed_time, 2)
-    telemetry["total_tokens"] = telemetry.get("total_tokens", 0) + tokens_used
+        telemetry["baseline_latency"] = round(pre_update_telemetry.get("total_latency", 0.0) + elapsed_time, 2)
+        telemetry["baseline_tokens"] = pre_update_telemetry.get("total_tokens", 0) + tokens_used
 
     return {
         "ui_code": ui_code,

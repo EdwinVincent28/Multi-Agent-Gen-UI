@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -13,7 +15,8 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Autonomous Data Science Engine API")
 
-logger.add("logs/telemetry.log", rotation="10 MB")
+logger.remove()
+logger.add("logs/telemetry.log", rotation="10 MB", level=os.getenv("LOG_LEVEL", "INFO"))
 
 app.add_middleware(
     CORSMiddleware,

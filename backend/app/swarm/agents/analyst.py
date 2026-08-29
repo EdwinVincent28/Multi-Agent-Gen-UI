@@ -1,6 +1,9 @@
+import re
+import time
 from langchain_core.prompts import ChatPromptTemplate
 from app.core.llm import get_llm, extract_text_content
 from app.swarm.state import GraphState
+from app.core.telemetry import record_node_telemetry, extract_tokens_used
 from loguru import logger
 
 def analyst_node(state: GraphState):
@@ -9,6 +12,7 @@ def analyst_node(state: GraphState):
     and generates key business insights.
     """
     logger.info("--- ANALYST RUNNING ---")
+    start_time = time.time()
 
     llm = get_llm(temperature=0.2) 
 
@@ -29,4 +33,10 @@ RULES:
     
     response = chain.invoke({"clean_data": state["clean_data"]})
 
-    return {"insights": extract_text_content(response.content)}
+    insights = re.sub(r'<think>.*?</think>', '', extract_text_content(response.content), flags=re.DOTALL).strip()
+
+    elapsed_time = time.time() - start_time
+    tokens_used = extract_tokens_used(response)
+    telemetry = record_node_telemetry(state.get("telemetry", {}), "analyst", elapsed_time, tokens_used, response_text=insights)
+
+    return {"insights": insights, "telemetry": telemetry}

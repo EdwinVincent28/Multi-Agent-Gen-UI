@@ -1,8 +1,10 @@
 import base64
 import io
+import time
 from langchain_core.messages import HumanMessage
 from app.swarm.state import GraphState
 from app.core.llm import get_vision_llm, extract_text_content
+from app.core.telemetry import record_node_telemetry, extract_tokens_used
 from loguru import logger
 
 try:
@@ -71,7 +73,16 @@ def _compress_image_base64(image_b64: str) -> str:
 
 def vision_analyst_node(state: GraphState):
     logger.info("--- VISION ANALYST RUNNING (GEMINI FLASH) ---")
-    
+    start_time = time.time()
+
+    if state.get("ui_code"):
+        logger.info(
+            "Thread already has a ui_code (this is an edit, not a "
+            "fresh generation) — skipping vision analysis, its output "
+            "would be discarded anyway."
+        )
+        return {}
+
     image_data = state.get("uploaded_image_base64")
     
     if not image_data:
@@ -139,7 +150,11 @@ def vision_analyst_node(state: GraphState):
     
     try:
         response = vision_llm.invoke([message])
-        return {"ui_blueprint": extract_text_content(response.content)}
+        elapsed_time = time.time() - start_time
+        tokens_used = extract_tokens_used(response)
+        blueprint_text = extract_text_content(response.content)
+        telemetry = record_node_telemetry(state.get("telemetry", {}), "vision_analyst", elapsed_time, tokens_used, response_text=blueprint_text)
+        return {"ui_blueprint": blueprint_text, "telemetry": telemetry}
     except Exception as e:
         logger.error(f"Vision Analyst Failed: {str(e)}")
         return {"errors": f"Vision analysis failed: {str(e)}"}

@@ -3,6 +3,7 @@ import time
 import re
 from langchain_core.prompts import ChatPromptTemplate
 from app.core.llm import get_llm, extract_text_content
+from app.core.telemetry import record_node_telemetry, extract_tokens_used
 from app.swarm.state import GraphState
 from loguru import logger
 
@@ -64,12 +65,7 @@ Return ONLY a valid, raw JSON object (no markdown code blocks, no trailing comme
         })
         
         elapsed_time = time.time() - start_time
-
-        tokens_used = 0
-        if hasattr(response, "usage_metadata") and response.usage_metadata:
-            tokens_used = response.usage_metadata.get("total_tokens", 0)
-        elif hasattr(response, "response_metadata") and "token_usage" in response.response_metadata:
-            tokens_used = response.response_metadata["token_usage"].get("total_tokens", 0)
+        tokens_used = extract_tokens_used(response)
 
         content = re.sub(r'<think>.*?</think>', '', extract_text_content(response.content), flags=re.DOTALL).strip()
         
@@ -90,9 +86,8 @@ Return ONLY a valid, raw JSON object (no markdown code blocks, no trailing comme
         elapsed_time = time.time() - start_time
         tokens_used = 0
 
-    telemetry = dict(state.get("telemetry", {}))
-    telemetry["total_latency"] = round(telemetry.get("total_latency", 0.0) + elapsed_time, 2)
-    telemetry["total_tokens"] = telemetry.get("total_tokens", 0) + tokens_used
+    decision_summary = f"pass={passed}, feedback={feedback}"
+    telemetry = record_node_telemetry(state.get("telemetry", {}), "evaluator", elapsed_time, tokens_used, response_text=decision_summary)
 
     current_retries = state.get("retry_count", 0)
 
